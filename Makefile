@@ -1,4 +1,7 @@
-.PHONY: run-server
+.PHONY: format run-http-serve
 
-run-server:
-	@go run cmd/server/main.go
+format:
+	@go fmt ./...
+
+run-http-server:
+	@go run cmd/http_server/main.go
