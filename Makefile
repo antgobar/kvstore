@@ -8,5 +8,5 @@ run-http-server:
 
 
 build-http-example:
-	@go build -o http_server cmd/http_server/main.go
-	@go build -o http_client cmd/http_client/main.go
+	@go build -o bin/http_server cmd/http_server/main.go
+	@go build -o bin/http_client cmd/http_client/main.go
