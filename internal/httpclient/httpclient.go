@@ -3,8 +3,11 @@ package httpclient
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"net/http"
+	"strconv"
+
+	"github.com/antgobar/kvstore/internal/transport"
 )
 
 type Client struct {
@@ -17,42 +20,65 @@ func New(serverAddr string) *Client {
 	}
 }
 
-type putKey struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
-}
-
-
-type (c *Client) Post[Request any, Response any](endpoint string, payload Request) (*Response, error)  {
+func post[Request any, Response any](c *Client, endpoint string, payload Request) (*Response, error) {
 	data, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	req, err := http.NewRequest(http.MethodPost, c.ServerAddr, bytes.NewReader(data))
-	if err = nil {
-		return err
+	if err != nil {
+		return nil, err
 	}
+	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
-	if err = nil {
-		return err
+	if err != nil {
+		return nil, err
 	}
 	defer resp.Body.Close()
-	req.Header.Set("Content-Type", "application/json")
+
+	if resp.StatusCode == http.StatusAccepted || resp.StatusCode == http.StatusCreated {
+		return nil, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.New("unexpected status" + strconv.Itoa(resp.StatusCode))
+	}
 
 	var result Response
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decoding response: %w", err)
+		return nil, err
 	}
 
 	return &result, nil
 }
 
+func (c *Client) Put(key string, value []byte) error {
+	put := transport.KeyValuePayload{
+		Key:   key,
+		Value: value,
+	}
+	_, err := post[transport.KeyValuePayload, transport.KeyValuePayload](c, "/put", put)
+	return err
+}
 
-func (c *Client) Put(key string, value []byte) (any, error) {
-	putKeyData := new(putKey)
-	putKeyData.Key = key
-	putKeyData.Value = string(value)
+func (c *Client) Get(key string) (*transport.KeyValuePayload, error) {
+	get := transport.KeyPayload{
+		Key: key,
+	}
+	response, err := post[transport.KeyPayload, transport.KeyValuePayload](c, "/get", get)
+	if err != nil {
+		return nil, err
+	}
+	return response, nil
+}
 
-	resp, err := c.post("/put", putKeyData)
+func (c *Client) Delete(key string) error {
+	delete := transport.KeyPayload{
+		Key: key,
+	}
+	_, err := post[transport.KeyPayload, transport.KeyValuePayload](c, "/delete", delete)
+	if err != nil {
+		return err
+	}
+	return nil
 }
