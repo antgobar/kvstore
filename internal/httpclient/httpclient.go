@@ -64,7 +64,7 @@ func (c *Client) Put(ctx context.Context, key string, value []byte) error {
 	return err
 }
 
-func (c *Client) Get(ctx context.Context, key string) (*transport.ValuePayload, error) {
+func (c *Client) Get(ctx context.Context, key string) ([]byte, error) {
 	get := transport.KeyPayload{
 		Key: key,
 	}
@@ -72,7 +72,7 @@ func (c *Client) Get(ctx context.Context, key string) (*transport.ValuePayload, 
 	if err != nil {
 		return nil, err
 	}
-	return response, nil
+	return response.Value, nil
 }
 
 func (c *Client) Delete(ctx context.Context, key string) error {
