@@ -8,3 +8,7 @@ type KeyValuePayload struct {
 type KeyPayload struct {
 	Key string `json:"key"`
 }
+
+type ValuePayload struct {
+	Value []byte `json:"value"`
+}

@@ -87,7 +87,7 @@ func (h *handler) handleGet(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
-	resp := transport.KeyValuePayload{Key: k.Key, Value: value}
+	resp := transport.ValuePayload{Value: value}
 	json.NewEncoder(w).Encode(resp)
 }
 
