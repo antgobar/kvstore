@@ -1,8 +1,10 @@
 package store
 
 import (
-	"errors"
+	"context"
 	"sync"
+
+	custom_errors "github.com/antgobar/kvstore/internal/errors"
 )
 
 type MemoryStore struct {
@@ -16,30 +18,30 @@ func NewMemoryStore() *MemoryStore {
 	}
 }
 
-func (m *MemoryStore) Put(key string, value []byte) error {
+func (m *MemoryStore) Put(_ context.Context, key string, value []byte) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.data[key] = value
 	return nil
 }
 
-func (m *MemoryStore) Get(key string) ([]byte, error) {
+func (m *MemoryStore) Get(_ context.Context, key string) ([]byte, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	v, ok := m.data[key]
 	if !ok {
-		return nil, errors.New("not found")
+		return nil, custom_errors.ErrKeyNotFound
 	}
 	return v, nil
 }
 
-func (m *MemoryStore) Delete(key string) error {
+func (m *MemoryStore) Delete(_ context.Context, key string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if _, ok := m.data[key]; !ok {
-		return errors.New("not found")
+		return custom_errors.ErrKeyNotFound
 	}
 
 	delete(m.data, key)

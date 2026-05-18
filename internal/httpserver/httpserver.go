@@ -1,34 +1,35 @@
 package httpserver
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
+	custom_errors "github.com/antgobar/kvstore/internal/errors"
 	"github.com/antgobar/kvstore/internal/transport"
 )
 
 type Store interface {
-	Put(key string, value []byte) error
-	Get(key string) ([]byte, error)
-	Delete(key string) error
+	Put(ctx context.Context, key string, value []byte) error
+	Get(ctx context.Context, key string) ([]byte, error)
+	Delete(ctx context.Context, key string) error
 }
 
 type Server struct {
-	Addr  string
-	Store Store
+	Addr           string
+	Store          Store
+	RequestTimeout time.Duration
 }
 
-func New(addr string, store Store) *Server {
+func New(addr string, store Store, requestTimeout time.Duration) *Server {
 	return &Server{
-		Addr:  addr,
-		Store: store,
+		Addr:           addr,
+		Store:          store,
+		RequestTimeout: requestTimeout,
 	}
-}
-
-type handler struct {
-	store Store
 }
 
 func (s *Server) Run() {
@@ -38,11 +39,9 @@ func (s *Server) Run() {
 		Handler: mux,
 	}
 
-	h := handler{store: s.Store}
-
-	mux.HandleFunc("POST /put", h.handlePut)
-	mux.HandleFunc("POST /get", h.handleGet)
-	mux.HandleFunc("POST /delete", h.handleDelete)
+	mux.HandleFunc("POST /put", s.handlePut)
+	mux.HandleFunc("POST /get", s.handleGet)
+	mux.HandleFunc("POST /delete", s.handleDelete)
 
 	fmt.Println("Running kvstore http server on", s.Addr)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -50,7 +49,7 @@ func (s *Server) Run() {
 	}
 }
 
-func (h *handler) handlePut(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handlePut(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 
 	var keyVal transport.KeyValuePayload
@@ -59,8 +58,9 @@ func (h *handler) handlePut(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
-	if err := h.store.Put(keyVal.Key, keyVal.Value); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), s.RequestTimeout)
+	defer cancel()
+	if err := s.Store.Put(ctx, keyVal.Key, keyVal.Value); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -68,7 +68,7 @@ func (h *handler) handlePut(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 }
 
-func (h *handler) handleGet(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleGet(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 
 	var k transport.KeyPayload
@@ -77,9 +77,14 @@ func (h *handler) handleGet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	value, err := h.store.Get(k.Key)
+	ctx, cancel := context.WithTimeout(context.Background(), s.RequestTimeout)
+	defer cancel()
+	value, err := s.Store.Get(ctx, k.Key)
 	if err != nil {
+		if err == custom_errors.ErrKeyNotFound {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -91,7 +96,7 @@ func (h *handler) handleGet(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-func (h *handler) handleDelete(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 
 	var k transport.KeyPayload
@@ -100,8 +105,13 @@ func (h *handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	if err := h.store.Delete(k.Key); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), s.RequestTimeout)
+	defer cancel()
+	if err := s.Store.Delete(ctx, k.Key); err != nil {
+		if err == custom_errors.ErrKeyNotFound {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
