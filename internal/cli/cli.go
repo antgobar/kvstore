@@ -35,8 +35,7 @@ func Run(client Client) {
 	case "get":
 		value, err := client.Get(ctx, args.Key)
 		if err != nil {
-			log.Fatalf("error getting key %s, error: %v",
-				args.Key, err)
+			log.Fatal(err)
 		}
 		fmt.Printf("successful get: %s - value: %s\n",
 			args.Key, string(value))

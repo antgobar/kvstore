@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -45,7 +46,12 @@ func post[Request any, Response any](ctx context.Context, c *Client, endpoint st
 		return nil, nil
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
+		responseBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
+		}
+
+		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(responseBody))
 	}
 
 	var result Response
