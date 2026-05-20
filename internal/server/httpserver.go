@@ -1,4 +1,4 @@
-package httpserver
+package server
 
 import (
 	"context"
@@ -24,7 +24,7 @@ type Server struct {
 	RequestTimeout time.Duration
 }
 
-func New(addr string, store Store, requestTimeout time.Duration) *Server {
+func NewHttpServer(addr string, store Store, requestTimeout time.Duration) *Server {
 	return &Server{
 		Addr:           addr,
 		Store:          store,

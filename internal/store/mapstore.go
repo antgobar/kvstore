@@ -12,7 +12,7 @@ type MemoryStore struct {
 	mu   sync.RWMutex
 }
 
-func NewMemoryStore() *MemoryStore {
+func NewMapStore() *MemoryStore {
 	return &MemoryStore{
 		data: make(map[string][]byte),
 	}
