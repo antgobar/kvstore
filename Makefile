@@ -1,4 +1,7 @@
-.PHONY: format build-http-map-example build-run-http-map-example build-run
+.PHONY: test format build-http-map-example build-run-http-map-example build-run
+
+test:
+	@go test ./pkg/integration
 
 format:
 	@go fmt ./...

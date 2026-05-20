@@ -22,6 +22,7 @@ type HttpServer struct {
 	Addr           string
 	Store          Store
 	RequestTimeout time.Duration
+	server         *http.Server
 }
 
 func NewHttpServer(addr string, store Store, requestTimeout time.Duration) *HttpServer {
@@ -34,7 +35,7 @@ func NewHttpServer(addr string, store Store, requestTimeout time.Duration) *Http
 
 func (s *HttpServer) Run() {
 	mux := http.NewServeMux()
-	server := &http.Server{
+	s.server = &http.Server{
 		Addr:    s.Addr,
 		Handler: mux,
 	}
@@ -44,8 +45,19 @@ func (s *HttpServer) Run() {
 	mux.HandleFunc("POST /delete", s.handleDelete)
 
 	fmt.Println("Running kvstore http server on", s.Addr)
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("listen: %s", err)
+	}
+}
+
+func (s *HttpServer) Stop() {
+	if s.server == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.server.Shutdown(ctx); err != nil {
+		log.Printf("HTTP server Shutdown: %v", err)
 	}
 }
 
@@ -79,6 +91,7 @@ func (s *HttpServer) handleGet(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), s.RequestTimeout)
 	defer cancel()
+
 	value, err := s.Store.Get(ctx, k.Key)
 	if err != nil {
 		if err == custom_errors.ErrKeyNotFound {
@@ -93,7 +106,10 @@ func (s *HttpServer) handleGet(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	resp := transport.ValuePayload{Value: value}
-	json.NewEncoder(w).Encode(resp)
+	if err = json.NewEncoder(w).Encode(resp); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
 }
 
 func (s *HttpServer) handleDelete(w http.ResponseWriter, r *http.Request) {
