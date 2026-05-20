@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	custom_errors "github.com/antgobar/kvstore/internal/errors"
+	custom_errors "github.com/antgobar/kvstore/pkg/errors"
 )
 
 type MemoryStore struct {

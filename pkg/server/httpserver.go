@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	custom_errors "github.com/antgobar/kvstore/internal/errors"
-	"github.com/antgobar/kvstore/internal/transport"
+	custom_errors "github.com/antgobar/kvstore/pkg/errors"
+	"github.com/antgobar/kvstore/pkg/transport"
 )
 
 type Store interface {

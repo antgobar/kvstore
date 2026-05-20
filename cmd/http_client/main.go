@@ -3,8 +3,8 @@ package main
 import (
 	"time"
 
-	"github.com/antgobar/kvstore/internal/cli"
-	"github.com/antgobar/kvstore/internal/client"
+	"github.com/antgobar/kvstore/pkg/cli"
+	"github.com/antgobar/kvstore/pkg/client"
 )
 
 const serverAddr = "http://localhost:8080"

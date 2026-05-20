@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/antgobar/kvstore/internal/transport"
+	"github.com/antgobar/kvstore/pkg/transport"
 )
 
 type Client struct {

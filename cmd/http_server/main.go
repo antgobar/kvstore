@@ -3,8 +3,8 @@ package main
 import (
 	"time"
 
-	"github.com/antgobar/kvstore/internal/server"
-	"github.com/antgobar/kvstore/internal/store"
+	"github.com/antgobar/kvstore/pkg/server"
+	"github.com/antgobar/kvstore/pkg/store"
 )
 
 func main() {
