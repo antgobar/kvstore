@@ -18,21 +18,21 @@ type Store interface {
 	Delete(ctx context.Context, key string) error
 }
 
-type Server struct {
+type HttpServer struct {
 	Addr           string
 	Store          Store
 	RequestTimeout time.Duration
 }
 
-func NewHttpServer(addr string, store Store, requestTimeout time.Duration) *Server {
-	return &Server{
+func NewHttpServer(addr string, store Store, requestTimeout time.Duration) *HttpServer {
+	return &HttpServer{
 		Addr:           addr,
 		Store:          store,
 		RequestTimeout: requestTimeout,
 	}
 }
 
-func (s *Server) Run() {
+func (s *HttpServer) Run() {
 	mux := http.NewServeMux()
 	server := &http.Server{
 		Addr:    s.Addr,
@@ -49,7 +49,7 @@ func (s *Server) Run() {
 	}
 }
 
-func (s *Server) handlePut(w http.ResponseWriter, r *http.Request) {
+func (s *HttpServer) handlePut(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 
 	var keyVal transport.KeyValuePayload
@@ -68,7 +68,7 @@ func (s *Server) handlePut(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 }
 
-func (s *Server) handleGet(w http.ResponseWriter, r *http.Request) {
+func (s *HttpServer) handleGet(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 
 	var k transport.KeyPayload
@@ -96,7 +96,7 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
+func (s *HttpServer) handleDelete(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 
 	var k transport.KeyPayload

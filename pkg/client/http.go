@@ -12,20 +12,20 @@ import (
 	"github.com/antgobar/kvstore/pkg/transport"
 )
 
-type Client struct {
+type HttpClient struct {
 	ServerAddr string
 	client     http.Client
 }
 
-func NewHttpClient(serverAddr string, timeout time.Duration) *Client {
+func NewHttpClient(serverAddr string, timeout time.Duration) *HttpClient {
 	httpClient := http.Client{Timeout: timeout}
-	return &Client{
+	return &HttpClient{
 		ServerAddr: serverAddr,
 		client:     httpClient,
 	}
 }
 
-func post[Request any, Response any](ctx context.Context, c *Client, endpoint string, payload Request) (*Response, error) {
+func post[Request any, Response any](ctx context.Context, c *HttpClient, endpoint string, payload Request) (*Response, error) {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
@@ -61,7 +61,7 @@ func post[Request any, Response any](ctx context.Context, c *Client, endpoint st
 	return &result, nil
 }
 
-func (c *Client) Put(ctx context.Context, key string, value []byte) error {
+func (c *HttpClient) Put(ctx context.Context, key string, value []byte) error {
 	put := transport.KeyValuePayload{
 		Key:   key,
 		Value: value,
@@ -70,7 +70,7 @@ func (c *Client) Put(ctx context.Context, key string, value []byte) error {
 	return err
 }
 
-func (c *Client) Get(ctx context.Context, key string) ([]byte, error) {
+func (c *HttpClient) Get(ctx context.Context, key string) ([]byte, error) {
 	get := transport.KeyPayload{
 		Key: key,
 	}
@@ -81,7 +81,7 @@ func (c *Client) Get(ctx context.Context, key string) ([]byte, error) {
 	return response.Value, nil
 }
 
-func (c *Client) Delete(ctx context.Context, key string) error {
+func (c *HttpClient) Delete(ctx context.Context, key string) error {
 	delete := transport.KeyPayload{
 		Key: key,
 	}
