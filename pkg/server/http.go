@@ -12,7 +12,7 @@ import (
 	"github.com/antgobar/kvstore/pkg/transport"
 )
 
-type Store interface {
+type Storer interface {
 	Put(ctx context.Context, key string, value []byte) error
 	Get(ctx context.Context, key string) ([]byte, error)
 	Delete(ctx context.Context, key string) error
@@ -20,12 +20,12 @@ type Store interface {
 
 type HttpServer struct {
 	Addr           string
-	Store          Store
+	Store          Storer
 	RequestTimeout time.Duration
 	server         *http.Server
 }
 
-func NewHttpServer(addr string, store Store, requestTimeout time.Duration) *HttpServer {
+func NewHttpServer(addr string, store Storer, requestTimeout time.Duration) *HttpServer {
 	return &HttpServer{
 		Addr:           addr,
 		Store:          store,

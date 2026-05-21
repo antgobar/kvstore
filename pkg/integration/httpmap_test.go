@@ -11,7 +11,7 @@ import (
 	"github.com/antgobar/kvstore/pkg/store"
 )
 
-func TestEndToEndPutKeyRetrievable(t *testing.T) {
+func TestEndToEndPutKeyGettable(t *testing.T) {
 	httpClient := client.NewHttpClient("http://localhost:8080", time.Second*5)
 	mapStore := store.NewMapStore()
 	httpServer := server.NewHttpServer("localhost:8080", mapStore, time.Second*5)
