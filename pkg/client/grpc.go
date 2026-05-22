@@ -16,9 +16,9 @@ type GrpcClient struct {
 }
 
 func NewGrpcClient(addr string) *GrpcClient {
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient("dns:///"+addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		log.Fatalf("Failed to connect: %v", err)
+		log.Fatalf("fail to dial: %v", err)
 	}
 
 	client := pb.NewKvStoreClient(conn)
@@ -26,23 +26,26 @@ func NewGrpcClient(addr string) *GrpcClient {
 	return &GrpcClient{client, conn}
 }
 
-func (g *GrpcClient) Put(ctx context.Context, key string, value []byte) error {
-	_, err := g.client.Put(ctx, &pb.PutRequest{
+func (s *GrpcClient) Put(ctx context.Context, key string, value []byte) error {
+	defer s.connection.Close()
+	_, err := s.client.Put(ctx, &pb.PutRequest{
 		Key:   key,
 		Value: value,
 	})
 	return err
 }
 
-func (g *GrpcClient) Get(ctx context.Context, key string) ([]byte, error) {
-	res, err := g.client.Get(ctx, &pb.GetRequest{
+func (s *GrpcClient) Get(ctx context.Context, key string) ([]byte, error) {
+	defer s.connection.Close()
+	res, err := s.client.Get(ctx, &pb.GetRequest{
 		Key: key,
 	})
 	return res.Value, err
 }
 
-func (g *GrpcClient) Delete(ctx context.Context, key string) error {
-	_, err := g.client.Delete(ctx, &pb.DeleteRequest{
+func (s *GrpcClient) Delete(ctx context.Context, key string) error {
+	defer s.connection.Close()
+	_, err := s.client.Delete(ctx, &pb.DeleteRequest{
 		Key: key,
 	})
 	return err

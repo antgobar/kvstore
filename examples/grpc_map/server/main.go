@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	const addr = ":50051"
+	const addr = "localhost:50051"
 	const requestTimeout = time.Second * 10
 	s := store.NewMapStore()
 	grpcServer := server.NewGrpcServer(addr, s, requestTimeout)
