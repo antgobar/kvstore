@@ -1,4 +1,4 @@
-.PHONY: test format build-http-map-example build-run-http-map-example build-run
+.PHONY: test format build-http-map-example build-run-http-map-example build-run gen-proto
 
 test:
 	@go test ./pkg/integration
@@ -16,3 +16,6 @@ build-run-http-map-example:
 
 build-run:
 	@make build-run-http-map-example
+
+gen-proto:
+	@./proto/generate_proto.sh
