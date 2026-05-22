@@ -40,7 +40,13 @@ func (s *GrpcClient) Get(ctx context.Context, key string) ([]byte, error) {
 	res, err := s.client.Get(ctx, &pb.GetRequest{
 		Key: key,
 	})
-	return res.Value, err
+	if err != nil {
+		return nil, err
+	}
+	if res == nil {
+		return nil, nil
+	}
+	return res.Value, nil
 }
 
 func (s *GrpcClient) Delete(ctx context.Context, key string) error {

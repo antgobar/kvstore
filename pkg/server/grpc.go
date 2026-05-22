@@ -2,13 +2,17 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"time"
 
 	pb "github.com/antgobar/kvstore/internal/genproto"
+	custom_errors "github.com/antgobar/kvstore/pkg/errors"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type GrpcServer struct {
@@ -63,6 +67,14 @@ func (s *GrpcServer) Stop() {
 	log.Println("GRPC server stopped")
 }
 
+// toGrpcError maps domain errors to gRPC status errors.
+func toGrpcError(err error) error {
+	if errors.Is(err, custom_errors.ErrKeyNotFound) {
+		return status.Error(codes.NotFound, err.Error())
+	}
+	return status.Error(codes.Internal, err.Error())
+}
+
 // grpcAdapter translates between the proto-generated interface and GrpcServer.
 // This keeps proto concerns out of GrpcServer itself.
 type grpcAdapter struct {
@@ -71,16 +83,23 @@ type grpcAdapter struct {
 }
 
 func (a *grpcAdapter) Put(ctx context.Context, req *pb.PutRequest) (*pb.PutResponse, error) {
-	err := a.srv.Put(ctx, req.Key, req.Value)
-	return &pb.PutResponse{}, err
+	if err := a.srv.Put(ctx, req.Key, req.Value); err != nil {
+		return nil, toGrpcError(err)
+	}
+	return &pb.PutResponse{}, nil
 }
 
 func (a *grpcAdapter) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
 	value, err := a.srv.Get(ctx, req.Key)
-	return &pb.GetResponse{Value: value}, err
+	if err != nil {
+		return nil, toGrpcError(err)
+	}
+	return &pb.GetResponse{Value: value}, nil
 }
 
 func (a *grpcAdapter) Delete(ctx context.Context, req *pb.DeleteRequest) (*pb.DeleteResponse, error) {
-	err := a.srv.Delete(ctx, req.Key)
-	return &pb.DeleteResponse{}, err
+	if err := a.srv.Delete(ctx, req.Key); err != nil {
+		return nil, toGrpcError(err)
+	}
+	return &pb.DeleteResponse{}, nil
 }
