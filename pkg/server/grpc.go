@@ -12,7 +12,6 @@ import (
 )
 
 type GrpcServer struct {
-	pb.UnimplementedKvStoreServer
 	Store   Storer
 	Addr    string
 	Timeout time.Duration
@@ -28,27 +27,22 @@ func NewGrpcServer(addr string, store Storer, timeout time.Duration) *GrpcServer
 	}
 }
 
-func (s *GrpcServer) Put(ctx context.Context, req *pb.PutRequest) (*pb.PutResponse, error) {
+func (s *GrpcServer) Put(ctx context.Context, key string, value []byte) error {
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
-	err := s.Store.Put(ctx, req.Key, req.Value)
-	return &pb.PutResponse{}, err
+	return s.Store.Put(ctx, key, value)
 }
 
-func (s *GrpcServer) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
+func (s *GrpcServer) Get(ctx context.Context, key string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
-	value, err := s.Store.Get(ctx, req.Key)
-	return &pb.GetResponse{
-		Value: value,
-	}, err
+	return s.Store.Get(ctx, key)
 }
 
-func (s *GrpcServer) Delete(ctx context.Context, req *pb.DeleteRequest) (*pb.DeleteResponse, error) {
+func (s *GrpcServer) Delete(ctx context.Context, key string) error {
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
-	err := s.Store.Delete(ctx, req.Key)
-	return &pb.DeleteResponse{}, err
+	return s.Store.Delete(ctx, key)
 }
 
 func (s *GrpcServer) Run() {
@@ -57,15 +51,36 @@ func (s *GrpcServer) Run() {
 		log.Fatalf("failed to listen on port %s: %v", s.Addr, err)
 	}
 
-	pb.RegisterKvStoreServer(s.server, s)
+	pb.RegisterKvStoreServer(s.server, &grpcAdapter{srv: s})
 	fmt.Println("Running kvstore GRPC server on", s.Addr)
 	if err := s.server.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %v", err)
 	}
-
 }
 
 func (s *GrpcServer) Stop() {
 	s.server.Stop()
 	log.Println("GRPC server stopped")
+}
+
+// grpcAdapter translates between the proto-generated interface and GrpcServer.
+// This keeps proto concerns out of GrpcServer itself.
+type grpcAdapter struct {
+	pb.UnimplementedKvStoreServer
+	srv *GrpcServer
+}
+
+func (a *grpcAdapter) Put(ctx context.Context, req *pb.PutRequest) (*pb.PutResponse, error) {
+	err := a.srv.Put(ctx, req.Key, req.Value)
+	return &pb.PutResponse{}, err
+}
+
+func (a *grpcAdapter) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
+	value, err := a.srv.Get(ctx, req.Key)
+	return &pb.GetResponse{Value: value}, err
+}
+
+func (a *grpcAdapter) Delete(ctx context.Context, req *pb.DeleteRequest) (*pb.DeleteResponse, error) {
+	err := a.srv.Delete(ctx, req.Key)
+	return &pb.DeleteResponse{}, err
 }
