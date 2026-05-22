@@ -14,8 +14,17 @@ build-run-http-map-example:
 	@make build-http-map-example
 	@./bin/http_map_server
 
-build-run:
-	@make build-run-http-map-example
+build-grpc-map-example:
+	@go build -o bin/grpc_map_server examples/grpc_map/server/main.go
+	@go build -o bin/grpc_map_client examples/grpc_map/client/main.go
+
+build-run-grpc-map-example:
+	@make build-grpc-map-example
+	@./bin/grpc_map_server
+
+build:
+	@make build-http-map-example
+	@make build-grpc-map-example
 
 gen-proto:
 	@./proto/generate_proto.sh
