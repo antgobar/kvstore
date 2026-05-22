@@ -16,7 +16,7 @@ type GrpcServer struct {
 	Store   Storer
 	Addr    string
 	Timeout time.Duration
-	server  grpc.Server
+	server  *grpc.Server
 }
 
 func NewGrpcServer(addr string, store Storer, timeout time.Duration) *GrpcServer {
@@ -24,16 +24,20 @@ func NewGrpcServer(addr string, store Storer, timeout time.Duration) *GrpcServer
 		Store:   store,
 		Addr:    addr,
 		Timeout: timeout,
-		server:  *grpc.NewServer(),
+		server:  grpc.NewServer(),
 	}
 }
 
 func (s *GrpcServer) Put(ctx context.Context, req *pb.PutRequest) (*pb.PutResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
+	defer cancel()
 	err := s.Store.Put(ctx, req.Key, req.Value)
 	return &pb.PutResponse{}, err
 }
 
 func (s *GrpcServer) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
+	defer cancel()
 	value, err := s.Store.Get(ctx, req.Key)
 	return &pb.GetResponse{
 		Value: value,
@@ -41,6 +45,8 @@ func (s *GrpcServer) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetRespon
 }
 
 func (s *GrpcServer) Delete(ctx context.Context, req *pb.DeleteRequest) (*pb.DeleteResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
+	defer cancel()
 	err := s.Store.Delete(ctx, req.Key)
 	return &pb.DeleteResponse{}, err
 }
@@ -51,7 +57,7 @@ func (s *GrpcServer) Run() {
 		log.Fatalf("failed to listen on port %s: %v", s.Addr, err)
 	}
 
-	pb.RegisterKvStoreServer(&s.server, &GrpcServer{})
+	pb.RegisterKvStoreServer(s.server, s)
 	fmt.Println("Running kvstore GRPC server on", s.Addr)
 	if err := s.server.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %v", err)
@@ -60,8 +66,6 @@ func (s *GrpcServer) Run() {
 }
 
 func (s *GrpcServer) Stop() {
-	_, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 	s.server.Stop()
-	log.Printf("GRPC Server shutdown")
+	log.Println("GRPC server stopped")
 }

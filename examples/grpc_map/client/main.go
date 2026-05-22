@@ -7,7 +7,7 @@ import (
 	"github.com/antgobar/kvstore/pkg/client"
 )
 
-const serverAddr = "http://localhost:50051"
+const serverAddr = "localhost:50051"
 const timeout = time.Second * 10
 
 func main() {
