@@ -43,9 +43,6 @@ func (s *GrpcClient) Get(ctx context.Context, key string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if res == nil {
-		return nil, nil
-	}
 	return res.Value, nil
 }
 

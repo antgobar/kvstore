@@ -84,7 +84,7 @@ type grpcAdapter struct {
 
 func (a *grpcAdapter) Put(ctx context.Context, req *pb.PutRequest) (*pb.PutResponse, error) {
 	if err := a.srv.Put(ctx, req.Key, req.Value); err != nil {
-		return nil, toGrpcError(err)
+		return &pb.PutResponse{}, toGrpcError(err)
 	}
 	return &pb.PutResponse{}, nil
 }
@@ -92,14 +92,14 @@ func (a *grpcAdapter) Put(ctx context.Context, req *pb.PutRequest) (*pb.PutRespo
 func (a *grpcAdapter) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
 	value, err := a.srv.Get(ctx, req.Key)
 	if err != nil {
-		return nil, toGrpcError(err)
+		return &pb.GetResponse{}, toGrpcError(err)
 	}
 	return &pb.GetResponse{Value: value}, nil
 }
 
 func (a *grpcAdapter) Delete(ctx context.Context, req *pb.DeleteRequest) (*pb.DeleteResponse, error) {
 	if err := a.srv.Delete(ctx, req.Key); err != nil {
-		return nil, toGrpcError(err)
+		return &pb.DeleteResponse{}, toGrpcError(err)
 	}
 	return &pb.DeleteResponse{}, nil
 }
