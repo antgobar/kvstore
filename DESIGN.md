@@ -19,12 +19,38 @@ This is a plugin-style architecture. For example:
 ## Design Philosophy
 
 - **Interface-driven** — core operations defined as minimal Go interfaces
-- **Pluggable** — storage, transport, routing, replication, auth all swappable independently
+- **Pluggable** — storage, transport, routing, replication, auth, meta storage all swappable independently
 - **Composable** — single node, sharded node, multi-node cluster are different compositions of the same parts
 - **Batteries included** — reference implementations for all common cases
 - **Incremental** — simple single-node works first, complexity layered on top
 - **No lock-in** — a user providing a Redis-backed storage only needs to implement Get, Put, Delete (and Scan where needed)
 - **Learning-oriented** — where external libraries exist (bbolt, hashicorp/raft), the library also provides a from-scratch implementation so the internals are understood. Users choose which to use.
+- **Data/control plane separation** — user KV data and operational metadata are stored and managed independently; scaling and shard redistribution never migrate control-plane state through the user-data transfer protocol
+
+### Data plane vs control plane
+
+| Plane | What it stores | Sharded? | Moved on redistribution? |
+| ----- | -------------- | -------- | ------------------------ |
+| **Data plane** | User keys/values via `Storage` | Yes (hash ring) | Yes — keys transfer node-to-node |
+| **Control plane** | Cluster ops, transfer state, hints, credentials, node identity | No | No — meta stays local or in dedicated cluster backend |
+
+**Invariant**: shard redistribution and cluster scaling must never require migrating control-plane state through the user-data transfer protocol. Transfer checkpoints, hints, and dedup caches live in meta stores, not in sharded user `Storage`.
+
+```mermaid
+flowchart TB
+  subgraph dataPlane [DataPlane]
+    UserKV[User Storage - sharded replicated]
+  end
+  subgraph controlPlane [ControlPlane]
+    LocalMeta[LocalMetaStore per node]
+    ClusterMeta[ClusterMeta via Membership backend]
+    CredentialStore[CredentialStore pluggable]
+  end
+  JoinLeave[Join Leave Transfer] --> LocalMeta
+  JoinLeave --> ClusterMeta
+  JoinLeave -->|"user keys only"| UserKV
+  Auth[Auth middleware] --> CredentialStore
+```
 
 ---
 
@@ -74,6 +100,16 @@ type LBConfigSink interface {
 
 Reference sinks: file writer (nginx `upstream` block), stdout (for sidecar), noop.
 
+**Redistribution is topology-independent** — key migration uses internal `ShardService` only. nginx/LB/`LBConfigSync` updates the backend pool; it never moves data. Wrong-node requests during redistribution: `Router` uses the current generation and forwards to the authoritative owner (source during transfer, destination after cutover).
+
+**LB pool timing during transfer**:
+
+| Node state | In nginx pool? | Receives client traffic? |
+| ---------- | -------------- | ------------------------ |
+| `Receiving` (not ready) | No | No — internal only |
+| `Ready` / `Active` | Yes | Yes |
+| `TransferringOut` | Yes (draining) | Yes, forwards owned keys; new writes go to successor |
+
 ### Smart gateway
 
 - Gateway composes `Router`, `Membership`, `NodePool`, optional auth
@@ -97,7 +133,7 @@ type NodeRole int // StorageOnly | ClientFacing | Gateway
 | ---- | ------------------ | ------------- | ----- |
 | `ClientFacing` | `KVService` | cluster services | Default for dumb-LB mode |
 | `StorageOnly` | none | cluster services | Used behind smart gateway |
-| `Gateway` | `KVService` | optional (membership only) | No local storage |
+| `Gateway` | `KVService` | optional (membership only) | No user `DataStore`; may use local `MetaStore` |
 
 ---
 
@@ -126,11 +162,14 @@ type NodeRole int // StorageOnly | ClientFacing | Gateway
 
 ```
 kvstore/
-  storage/        — Storage interface + all storage implementations
+  storage/        — user data plane: Storage interface + implementations
+  meta/           — control-plane storage interfaces + reference implementations
+    local/        — per-node MetaStore (in-memory, bbolt)
+    cluster/      — adapters over Membership backends (static, gossip, etcd, raft)
   transport/      — TransportServer, TransportClient interfaces + HTTP/gRPC implementations
   cluster/        — NodePool, hash ring, shard map, membership, LBConfigSync
   replication/    — replication strategy interface + implementations
-  node/           — composes storage, transport, routing, replication; NodeRole config
+  node/           — composes storage, meta, transport, routing, replication; NodeRole config
   gateway/        — smart gateway composition
   client/         — cluster-aware Client facade
   security/       — Authenticator, Authorizer, TLS helpers
@@ -143,7 +182,9 @@ kvstore/
 
 ## Interface Layers
 
-### Storage
+### Storage (data plane)
+
+User-facing key-value storage. Subject to sharding, replication, and redistribution.
 
 ```go
 type Storage interface {
@@ -178,6 +219,126 @@ Reference implementations:
 - Hand-rolled WAL-backed store (implements Storage + ScanStorage) — learning implementation, not dependent on bbolt
 
 Encryption at rest is backend-dependent and out of scope for the library core — users configure it on their chosen storage backend if supported.
+
+### Control Plane Storage
+
+Operational metadata — cluster management, transfer state, auth credentials, node identity. **Not** sharded, **not** routed through the hash ring, **not** transferred during redistribution.
+
+#### Base interface: `MetaStore`
+
+Local, per-node control-plane persistence. Separate interface from user `Storage` — different lifecycle and key namespace.
+
+```go
+type MetaStore interface {
+    Get(ctx context.Context, key string) ([]byte, error)
+    Put(ctx context.Context, key string, value []byte) error
+    Delete(ctx context.Context, key string) error
+    Scan(ctx context.Context, prefix string, fn func(key string, value []byte) error) error
+}
+```
+
+Reference implementations: in-memory map (testing/dev), bbolt file per node (`meta.db` alongside user data dir).
+
+Serialization: library defines typed structs; meta store holds encoded bytes (JSON in v1 for debuggability).
+
+#### Domain-specific pluggable stores
+
+Each concern gets its own small interface. All accept a `MetaStore` backend (or cluster backend) via constructor — user can swap map/bbolt without changing business logic.
+
+**`TransferStore`** (local, per-node) — in-flight redistribution state:
+
+```go
+type TransferStore interface {
+    SaveCheckpoint(ctx context.Context, transferID string, cp TransferCheckpoint) error
+    GetCheckpoint(ctx context.Context, transferID string) (TransferCheckpoint, error)
+    SaveTransferState(ctx context.Context, shardRange RangeToken, state TransferState) error
+    ListActiveTransfers(ctx context.Context) ([]TransferState, error)
+    DeleteTransfer(ctx context.Context, transferID string) error
+}
+```
+
+Keys under prefix `transfer/`. Survives process restart; not sharded.
+
+**`HintStore`** (local, per-node) — hinted handoff write-ahead buffer. Reference impl persists in local `MetaStore` under prefix `hints/`. Not user data.
+
+**`DedupStore`** (local, per-node) — idempotency cache for `RequestID` dedup:
+
+```go
+type DedupStore interface {
+    Seen(ctx context.Context, requestID string) (bool, error)
+    Mark(ctx context.Context, requestID string, ttl time.Duration) error
+}
+```
+
+In-memory with optional bbolt backing; TTL eviction required. Prefix `dedup/`.
+
+**`NodeStore`** (local, per-node) — node identity and local operational config:
+
+```go
+type NodeStore interface {
+    NodeID(ctx context.Context) (string, error)
+    SetNodeID(ctx context.Context, id string) error
+    LocalConfig(ctx context.Context) (NodeLocalConfig, error)
+}
+```
+
+Prefix `node/`. Written once at bootstrap. Cluster membership is `Membership`, not `NodeStore`.
+
+**`CredentialStore`** (pluggable — local or external) — auth credentials:
+
+```go
+type CredentialStore interface {
+    ValidateAPIKey(ctx context.Context, keyHash []byte) (Principal, error)
+    ListKeys(ctx context.Context) ([]CredentialRecord, error)
+    PutKey(ctx context.Context, record CredentialRecord) error
+    RevokeKey(ctx context.Context, keyID string) error
+}
+```
+
+Reference: bbolt-backed `CredentialStore` under prefix `auth/`. Alternative: `ExternalCredentialStore` wrapping JWKS/OIDC — validate-only, no local user DB. v1 covers credentials + opaque `Principal` claims; full RBAC via optional `RoleStore` in Phase 7.
+
+#### Cluster-wide meta (via `Membership`)
+
+Do not duplicate etcd/raft. Cluster-scoped records are owned by the `Membership` backend:
+
+| Record | Owner |
+| ------ | ----- |
+| Node registry, liveness | `Membership` |
+| Ring generation token | `Membership` / `Router` (derived from membership events) |
+| Global cluster config | `Membership` or static config file |
+
+`ClusterState` from observability is a **read snapshot** assembled from `Membership` + local `TransferStore` + user `Storage` stats — not a persisted blob.
+
+#### Meta key namespace
+
+| Prefix | Store | Scope | Examples |
+| ------ | ----- | ----- | -------- |
+| `node/` | `NodeStore` | local | node ID, local ports, role |
+| `transfer/` | `TransferStore` | local | checkpoints, active transfer state |
+| `hints/` | `HintStore` | local | hinted handoff queue |
+| `dedup/` | `DedupStore` | local | recent RequestIDs |
+| `auth/` | `CredentialStore` | local or external | API key hashes, revocation |
+| *(user keys)* | `Storage` | sharded | **never** mixed with above |
+
+#### NodeConfig wiring
+
+```go
+type NodeConfig struct {
+    Role            NodeRole
+    Logger          *slog.Logger
+    DataStore       Storage           // user data plane — sharded
+    MetaStore       MetaStore         // local control plane — NOT sharded
+    TransferStore   TransferStore     // optional; default wraps MetaStore
+    HintStore       HintStore
+    DedupStore      DedupStore
+    NodeStore       NodeStore
+    CredentialStore CredentialStore   // optional
+    Membership      Membership        // cluster control plane
+    // ...
+}
+```
+
+Gateway role: `DataStore` nil; still uses `MetaStore` (in-memory) for auth cache and routing epoch; `CredentialStore` if centralizing auth.
 
 ### Transport (Client-Facing)
 
@@ -229,7 +390,9 @@ Wire points:
 - HTTP: middleware wrapper around `RequestHandler`
 - Internal cluster: optional mTLS-as-identity (`Principal` derived from client cert CN/SAN)
 
-Reference implementations: **noop** (default), **static API key**, **JWT** (optional dependency).
+Reference implementations: **noop** (default), **static API key** (via `CredentialStore`), **JWT** (optional dependency, via `ExternalCredentialStore`).
+
+`Authenticator`/`Authorizer` consume `CredentialStore` when configured; noop when not.
 
 Gateway mode is the natural place for centralized auth. In dumb-LB mode, each node runs the same `Authenticator`/`Authorizer` chain.
 
@@ -310,9 +473,9 @@ type HintStore interface {
 
 Reference implementations: leaderless quorum, leader-based. Configurable N (replicas), W (write quorum), R (read quorum).
 
-- **Hinted handoff** — when a replica node is temporarily unavailable, writes are stored as hints and delivered on recovery
+- **Hinted handoff** — when a replica node is temporarily unavailable, writes are stored as hints in local `MetaStore` (`hints/` prefix) and delivered on recovery
 - **Read repair** — stale reads trigger background repair to the latest version
-- **Idempotency** — replicas deduplicate by `RequestID` on retry
+- **Idempotency** — replicas deduplicate by `RequestID` via `DedupStore` on retry
 
 ### Cluster Membership
 
@@ -389,15 +552,6 @@ Observability covers four things: metrics, logging, tracing, and state inspectio
 
 ### Logging
 
-```go
-// Every component accepts an optional logger
-type NodeConfig struct {
-    Logger *slog.Logger // nil = no-op
-    Role   NodeRole
-    // ...
-}
-```
-
 Structured fields on every log entry: `node_id`, `shard_id`, `operation`, `key` (hashed, not raw), `duration_ms`, `request_id`, `trace_id`, `error`.
 
 ### Metrics
@@ -430,20 +584,21 @@ Propagate `request_id` and trace context via gRPC metadata and HTTP headers on e
 
 ### State Inspection
 
-This is critical for understanding live node, store and cluster state. Every major component exposes a `State()` method returning a structured, serialisable snapshot:
+Every major component exposes a `State()` method returning a structured, serialisable snapshot. `StateInspector` reads from meta stores where relevant (`TransferState`, `PendingHints`, active transfers).
 
 ```go
 // Node-level state
 type NodeState struct {
     ID             string
     Addr           string
-    Status         NodeStatus // Active, Receiving, Transferring
+    Status         NodeStatus // Active, Receiving, Transferring, TransferringOut
     ShardCount     int
     Shards         []ShardState
     PeerCount      int
     Peers          []PeerState
     ReplicationLag time.Duration
     PendingHints   int
+    ActiveTransfers []TransferState
 }
 
 // Per-shard state
@@ -456,7 +611,7 @@ type ShardState struct {
     TransferState TransferState // phase, keys transferred, checkpoint version
 }
 
-// Cluster-level state
+// Cluster-level state — assembled snapshot, not persisted
 type ClusterState struct {
     Nodes       []NodeState
     TotalKeys   int
@@ -464,19 +619,26 @@ type ClusterState struct {
     RingHash    uint32 // fingerprint of current ring config
 }
 
-// Storage-level state
+// User data plane state
 type StorageState struct {
     Implementation string
     KeyCount       int
     SizeBytes      int64
     ShardStates    []ShardState
 }
+
+// Control plane state
+type MetaStoreState struct {
+    Implementation string
+    SizeBytes      int64
+    KeyCounts      map[string]int // by prefix: node/, transfer/, hints/, dedup/, auth/
+}
 ```
 
 These are exposed via:
 
 - A `StateInspector` interface any component can implement
-- An optional HTTP debug endpoint (e.g. `/debug/state`) on the client-facing server
+- An optional HTTP debug endpoint (e.g. `/debug/state`) on the client-facing server — returns separate `StorageState` and `MetaStoreState` sections
 - Loggable on demand via slog
 
 ```go
@@ -491,8 +653,9 @@ Graceful shutdown sequence:
 
 1. Stop accepting new requests
 2. Drain in-flight requests (configurable timeout)
-3. Leave cluster (`Membership.Leave`)
-4. Shutdown transport (`TransportServer.Shutdown`)
+3. Complete or abort active transfers (`TransferStore`)
+4. Leave cluster (`Membership.Leave`)
+5. Shutdown transport (`TransportServer.Shutdown`)
 
 ---
 
@@ -530,7 +693,7 @@ service ReplicationService {
     rpc ReplicateStream(stream ReplicateRequest) returns (ReplicateResponse);
 }
 
-// Shard ownership and transfer
+// Shard ownership and transfer — user keys only; control-plane state stays in MetaStore
 service ShardService {
     rpc TransferShard(stream ShardChunk) returns (TransferResponse);
     rpc ShardInfo(ShardInfoRequest) returns (ShardInfoResponse);
@@ -560,11 +723,11 @@ service RaftService {
 
 Node behavior depends on `NodeRole`:
 
-| Role | Servers | Clients |
-| ---- | ------- | ------- |
-| `ClientFacing` | gRPC on client-facing + internal ports | `NodePool` to all peers |
-| `StorageOnly` | gRPC on internal port only | `NodePool` to all peers |
-| `Gateway` | gRPC on client-facing port | `NodePool` to all storage nodes |
+| Role | Servers | Clients | Storage |
+| ---- | ------- | ------- | ------- |
+| `ClientFacing` | gRPC on client-facing + internal ports | `NodePool` to all peers | `DataStore` + local `MetaStore` |
+| `StorageOnly` | gRPC on internal port only | `NodePool` to all peers | `DataStore` + local `MetaStore` |
+| `Gateway` | gRPC on client-facing port | `NodePool` to all storage nodes | local `MetaStore` only (no `DataStore`) |
 
 Connection rules:
 
@@ -613,38 +776,72 @@ key → hash → shardID (mod 256, local concurrency partition)
 
 ---
 
-## Node Join / Shard Transfer Protocol
+## Cluster Redistribution
 
-When a new node D joins and claims a range currently owned by node A:
+Redistribution moves **user keys only** via internal `ShardService`. Control-plane state (checkpoints, hints, dedup cache, credentials) stays in local `MetaStore` or `Membership` — never streamed through `TransferShard`. Applies equally to dumb LB, gateway, and smart client topologies.
 
-1. D announces `StateReceiving` to the cluster (membership assigns a generation token)
-2. A identifies keys in D's range by scanning its local store
-3. A streams those keys to D via `TransferShard` (streaming gRPC)
-4. During transfer: **writes go to both A and D**, reads go to A only
-5. Cutover criteria met (see below) — D announces `StateReady`
-6. Cluster switches: all reads and writes now go to D
-7. A deletes its copy of the transferred keys
+```mermaid
+flowchart LR
+  Client[Client] --> LB[nginx RR optional]
+  LB --> NodeAny[Any node]
+  NodeAny -->|"ForwardService"| Owner[Owner node]
+  Owner -->|"ShardService internal"| Peer[Peer node]
+  Peer --> MetaStore[MetaStore local]
+  Owner --> DataStore[DataStore user keys]
+```
 
-The double-write window ensures writes during transfer are not lost. Sequence numbers on each shard track ordering through the transfer window.
+### Join
 
-### Cutover criteria
+When a new node D joins and claims range(s) currently owned by predecessor(s) A, B, C:
+
+1. D announces `StateReceiving` to the cluster (`Membership` assigns a generation token)
+2. Each predecessor identifies keys in D's range by scanning local `DataStore`
+3. Each range transfer is independent — own `transferID` in `TransferStore`
+4. Predecessor streams keys to D via `TransferShard` (streaming gRPC)
+5. During transfer: **writes go to both predecessor and D**, reads go to predecessor only
+6. Per-shard sequence numbers tracked in `TransferStore`, not user `DataStore`
+7. Cutover criteria met (see below) — D announces `StateReady`
+8. Cluster switches: all reads and writes now go to D
+9. Predecessors delete their copy of transferred keys
+10. `LBConfigSync` adds D to nginx pool only after `StateReady`
+
+The double-write window ensures writes during transfer are not lost.
+
+#### Cutover criteria
 
 D is ready when all of the following hold:
 
-1. Bulk `TransferShard` stream completes with a `TransferCheckpoint` (last key + version)
-2. D has applied all double-writes since checkpoint (tracked via per-shard sequence number)
-3. Merkle root of D's range matches A's (optional verification step)
+1. Bulk `TransferShard` stream completes with a `TransferCheckpoint` persisted in `TransferStore` (last key + version)
+2. D has applied all double-writes since checkpoint (tracked via per-shard sequence number in `TransferStore`)
+3. Merkle root of D's range matches predecessor's (optional verification step)
+
+### Leave
+
+Graceful leave before removal from LB pool:
+
+1. Node L marks ranges as `TransferringOut` in `TransferStore`
+2. For each range: stream to successor(s) — same protocol as join, reversed
+3. L drains in-flight client requests
+4. `Membership.Leave` → ring generation bump
+5. `LBConfigSync` removes L from upstream **after** transfers complete
+
+### Failure
+
+- Heartbeat timeout via `ClusterService`
+- `Membership` marks node dead; successors initiate transfer from last known checkpoint in `TransferStore`
+- If replication enabled: prefer replica as source
+- Failed node removed from nginx pool; surviving nodes absorb ranges
 
 ### Failure recovery
 
 | Failure | Behavior |
 | ------- | -------- |
-| D crashes mid-transfer | A continues serving; transfer restarts from checkpoint |
-| A crashes mid-transfer | D discards partial state; new owner re-transfers |
-| Concurrent join on same range | Membership serializes via generation token; second join rejected |
-| Write during transfer | Double-write to A + D; sequence numbers ensure ordering |
+| D crashes mid-transfer | Predecessor continues serving; transfer restarts from checkpoint in `TransferStore` |
+| Predecessor crashes mid-transfer | D discards partial state; new owner re-transfers |
+| Concurrent join on same range | `Membership` serializes via generation token; second join rejected |
+| Write during transfer | Double-write to predecessor + D; sequence numbers in `TransferStore` ensure ordering |
 
-`TransferState` on `ShardState` exposes phase, keys transferred, and checkpoint version for observability.
+`TransferState` on `ShardState` and `ActiveTransfers` on `NodeState` expose phase, keys transferred, and checkpoint version for observability.
 
 Forwarded requests carry an `x-forwarded` metadata flag to prevent infinite forwarding loops.
 
@@ -680,20 +877,22 @@ Correct tools for spikes (all in-process, zero latency):
 
 - Define core interfaces: `Storage`, `TransportServer`, `TransportClient`
 - Define all core error types (including `ErrUnauthorized`, `ErrForbidden`, `ErrInvalidArgument`)
-- In-memory map storage implementation
+- Data/control plane distinction documented
+- `MetaStore` interface; in-memory reference; `NodeStore`
+- In-memory map storage implementation (user data plane)
 - HTTP transport implementation
 - Single node, no distribution, works end to end
 - `slog` logging wired into every component from day one
-- `StorageState` and `NodeState` structs + `State()` methods on all components
+- `StorageState`, `MetaStoreState`, and `NodeState` structs + `State()` methods on all components
 - Noop `Authenticator` / `Authorizer` (auth hooks present, no enforcement)
-- `testing/` package: mock Storage, mock TransportClient
+- `testing/` package: mock Storage, mock TransportClient, mock MetaStore
 
 ### Phase 2 — Persistence (two paths, user chooses)
 
-- **Path A — bbolt**: bbolt storage implementation, bbolt handles durability internally, no WAL needed
+- **Path A — bbolt**: bbolt storage implementation for user `DataStore`; separate bbolt `MetaStore` reference (`meta.db`)
 - **Path B — hand-rolled WAL**: implement append-only WAL log, recovery on startup, compaction — learning implementation to understand how bbolt works under the hood
 - `Scan` added to storage interface (required by both paths)
-- `StorageState.SizeBytes` populated
+- `StorageState.SizeBytes` and `MetaStoreState.SizeBytes` populated
 - Optional `TTLStorage` on bbolt path if backend supports it
 
 ### Phase 3 — Node-level Sharding
@@ -706,6 +905,7 @@ Correct tools for spikes (all in-process, zero latency):
 - `ShardState` fully populated, token bucket level observable via state
 - `Metrics` interface introduced, wired into shard operations
 - `TTLStorage` on in-memory map (Phase 3 primary TTL path)
+- `DedupStore` (in-memory)
 
 ### Phase 4 — Static Multi-Node
 
@@ -728,14 +928,16 @@ Correct tools for spikes (all in-process, zero latency):
 
 ### Phase 5 — Dynamic Cluster
 
-- Node join/leave protocol
-- Shard transfer streaming (`ShardService`)
+- Node join/leave/failure redistribution protocol
+- `TransferStore`; checkpoints and sequence numbers in meta, not user `Storage`
+- Shard transfer streaming (`ShardService`) — user keys only
 - Double-write window during transfers
-- Transfer checkpoint + failure recovery
+- Multi-source join (independent `transferID` per range)
 - Membership generation tokens (serialize concurrent joins)
 - `ClusterService` proto
-- `ClusterState` fully observable — all node states, shard ownership, ring fingerprint
-- Transfer progress logged and exposed via state inspection (`TransferState`)
+- `ClusterState` fully observable — assembled from `Membership` + `TransferStore` + `Storage`
+- Transfer progress logged and exposed via state inspection (`TransferState`, `ActiveTransfers`)
+- Dumb LB pool timing: node enters nginx pool only after `StateReady`
 
 ### Phase 5b — Smart Gateway
 
@@ -749,7 +951,7 @@ Correct tools for spikes (all in-process, zero latency):
 - `Operation` / `Version` types wired through write path
 - Leaderless quorum implementation
 - Configurable N, R, W
-- Hinted handoff (`HintStore`)
+- bbolt-backed `HintStore`; `DedupStore` with TTL
 - Read repair
 - Idempotency via `RequestID` dedup on replicas
 - Replication lag and pending hints observable via `NodeState`
@@ -764,6 +966,7 @@ Correct tools for spikes (all in-process, zero latency):
   - Path B: `hashicorp/raft` which owns its own transport (production)
 - Adaptive capacity at cluster level
 - Leader-based replication
+- `CredentialStore` reference (bbolt); external JWKS adapter; optional `RoleStore`
 - Auth reference implementations: static API key, JWT
 - mTLS on internal cluster transport
 - `Tracer` interface + request_id/trace_id propagation
@@ -777,7 +980,7 @@ Correct tools for spikes (all in-process, zero latency):
 | ----- | -------- | ------------- |
 | Phase 4 | `KVService`, `ForwardService` | `KVService` on ClientFacing + Gateway; `ForwardService` on ClientFacing only |
 | Phase 4b | (no new services) | Client uses existing `KVService` |
-| Phase 5 | + `ShardService`, `ClusterService` | Internal port on all storage nodes |
+| Phase 5 | + `ShardService`, `ClusterService` | Internal port on all storage nodes; `ShardService` moves user keys only |
 | Phase 5b | (no new services) | Gateway binds `KVService` only |
 | Phase 6 | + `ReplicationService` | Internal port |
 | Phase 7 | + `RaftService` (or delegate to hashicorp/raft) | Internal port |
@@ -802,7 +1005,8 @@ For any CLI tooling built on top of the library:
 
 - Extension mechanism for users who need richer APIs than the base interface provides — e.g. a Redis adapter that wants to expose INCR or EXPIRE
 - How to expose `ClusterState` to external operators — HTTP endpoint, gRPC reflection, both?
-- Backup/export format — future phase, out of scope for v1
+- Backup/export format — future phase; note control-plane `meta.db` should be backed up separately from user data
+- Multi-gateway `CredentialStore` — external IdP or shared store recommended; single-gateway can use local bbolt
 
 ---
 
@@ -811,6 +1015,9 @@ For any CLI tooling built on top of the library:
 - Encryption at rest (backend-dependent; see Storage section)
 - Backup/restore tooling
 - Coordinated snapshot Scan across cluster
+- Full RBAC user management UI
+- Replicating local meta stores between nodes (each node owns its own `meta.db`)
+- Storing user KV in meta store (strict namespace separation enforced by convention)
 
 ---
 
