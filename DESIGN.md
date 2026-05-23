@@ -90,18 +90,18 @@ type Entry struct {
 
 ```
 kvstore/
-  storage/      — Storage interface + implementations (in-memory, bbolt, WAL)
-  meta/         — MetaStore interface + implementations (in-memory, bbolt)
-  transport/    — TransportServer, TransportClient + HTTP/gRPC implementations
-  cluster/      — NodePool, hash ring, shard map, membership, LBConfigSync
-  replication/  — Replicator interface + leaderless quorum + leader-based
-  node/         — wires all layers into a working node; NodeRole config
-  gateway/      — smart gateway (Phase 5b)
-  client/       — cluster-aware Client facade
-  security/     — Authenticator, Authorizer, TLS helpers
-  proto/        — protobuf definitions for all gRPC services
-  observe/      — Metrics, StateInspector, structured state types
-  testing/      — mock implementations of all interfaces
+  storage/     — Storage, TTLStorage, CASStorage, ScanStorage + impls
+  meta/        — MetaStore + impls (in-memory, bbolt)
+  transport/   — TransportServer, TransportClient + HTTP/gRPC impls
+  cluster/     — NodePool, hash ring, shard map, Membership, LBConfigSync
+  replication/ — Replicator + leaderless quorum + leader-based
+  node/        — wires all layers; NodeRole, NodeConfig
+  gateway/     — smart gateway (Phase 5b)
+  client/      — cluster-aware Client facade
+  security/    — Authenticator, Authorizer, TLS helpers
+  proto/       — protobuf definitions
+  observe/     — Metrics, State snapshots
+  testing/     — mock implementations of all interfaces
 ```
 
 ---
@@ -369,7 +369,7 @@ type Metrics interface {
 
 Not coupled to any metrics library — wire in Prometheus or OpenTelemetry. Nil = noop.
 
-Every component exposes a `State()` method returning a structured snapshot covering node status, shard counts and token levels, peers, active transfers, and storage stats. Exposed via optional `/debug/state` HTTP endpoint. Shutdown sequence: drain requests → checkpoint transfers → `Membership.Leave` → `TransportServer.Shutdown`.
+Every component exposes `State()` returning a structured snapshot (node status, shard counts, token levels, peers, transfers, storage stats) via optional `/debug/state`. Shutdown: drain requests → checkpoint transfers → `Membership.Leave` → `TransportServer.Shutdown`.
 
 ---
 
