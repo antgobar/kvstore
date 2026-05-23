@@ -6,6 +6,8 @@ A Go **library** (not an application) that provides composable, pluggable buildi
 distributed key-value stores. Users wire together provided implementations or supply their own
 via interfaces. Everything works out of the box but nothing is locked in.
 
+See [USE_CASES.md](USE_CASES.md) for LLM agent integration patterns and access-pattern guidance.
+
 This is a plugin-style architecture. For example:
 
 - I provide an HTTP server/client transport and a gRPC server/client transport
@@ -54,6 +56,24 @@ flowchart TB
 
 ---
 
+## MVP Scope
+
+The library MVP delivers composable distributed KV primitives. Use this table as a filter when reading the rest of the document — anything in the Deferred column is present for design completeness but not required to build.
+
+| In MVP | Deferred (post-MVP) |
+| ------ | ------------------- |
+| gRPC internal transport + HTTP/gRPC client-facing | Coordinated cluster-wide Scan snapshot |
+| Consistent hash ring + peer-to-peer forwarding hops | Merkle root verification during cutover |
+| Static + in-memory dynamic membership | Hybrid Logical Clocks (HLC) |
+| Shard transfer + join/leave/failure redistribution | Full RequestID exactly-once dedup (Phase 6) |
+| Leaderless quorum replication (N/W/R) | JWT, OIDC, RoleStore, full RBAC |
+| Static API key auth + TLS/mTLS on cluster (Phase 4c) | Gossip and Raft membership backends |
+| `Entry` envelope + `codec/` for TTL and versioning | Distributed / cross-shard transactions |
+| Single-node CAS optional (Phase 3) | Multi-key batch atomicity |
+| LBConfigSync for scaling topology changes | Tracer interface + trace_id propagation |
+
+---
+
 ## Deployment Topologies
 
 Three first-class deployment modes, all composable from the same parts:
@@ -98,7 +118,7 @@ type LBConfigSink interface {
 }
 ```
 
-Reference sinks: file writer (nginx `upstream` block), stdout (for sidecar), noop.
+Reference sinks: file writer (nginx `upstream` block), stdout (for sidecar), noop. Pluggable sink pattern — operators can substitute HAProxy or K8s Endpoints adapters without changing the core library. MVP requires only file writer + noop.
 
 **Redistribution is topology-independent** — key migration uses internal `ShardService` only. nginx/LB/`LBConfigSync` updates the backend pool; it never moves data. Wrong-node requests during redistribution: `Router` uses the current generation and forwards to the authoritative owner (source during transfer, destination after cutover).
 
@@ -150,8 +170,7 @@ type NodeRole int // StorageOnly | ClientFacing | Gateway
   - `ErrUnauthorized`
   - `ErrForbidden`
   - `ErrInvalidArgument`
-- **Idempotency** — all mutating ops accept an optional `RequestID`; safe to retry on `Unavailable`
-- **Request ID** — propagated through the forward chain to prevent duplicate side effects
+- **RequestID** — all mutating ops accept an optional `RequestID`. In MVP: propagated through the forward chain for logging and tracing; client retry policy retries `Unavailable` / `ResourceExhausted` only; no guarantee of exactly-once without replication. Post-MVP (Phase 6): `DedupStore` on replicas provides effectively-once on quorum writes.
 - **Limits** — configurable max key size (default 1 KB), max value size (default 1 MB); violations return `ErrInvalidArgument`
 - **Ports are configurable** — the library never hardcodes port numbers, always accepts config. Convention (not requirement): client-facing on one port, internal cluster on another.
 - **slog for logging** — stdlib since Go 1.21, no external dependency. Every component accepts an optional `*slog.Logger`. If nil, a no-op logger is used.
@@ -163,6 +182,7 @@ type NodeRole int // StorageOnly | ClientFacing | Gateway
 ```
 kvstore/
   storage/        — user data plane: Storage interface + implementations
+  codec/          — Entry marshal/unmarshal (JSON in v1; swappable); shared by all backends
   meta/           — control-plane storage interfaces + reference implementations
     local/        — per-node MetaStore (in-memory, bbolt)
     cluster/      — adapters over Membership backends (static, gossip, etcd, raft)
@@ -214,9 +234,39 @@ type CASStorage interface {
 
 Reference implementations:
 
-- In-memory map with RWMutex (implements Storage + ScanStorage + TTLStorage)
-- bbolt (implements Storage + ScanStorage) — uses bbolt's own durability
+- In-memory map with RWMutex (implements Storage + ScanStorage + TTLStorage + CASStorage)
+- bbolt (implements Storage + ScanStorage + CASStorage) — uses bbolt's own durability
 - Hand-rolled WAL-backed store (implements Storage + ScanStorage) — learning implementation, not dependent on bbolt
+
+### Internal storage record: `Entry`
+
+The public `Storage` API operates on `[]byte` values. Internally, every backend stores an `Entry` — a small envelope that adds expiry and versioning without exposing those details to callers.
+
+```go
+// Entry is the internal on-disk / in-memory record — not exposed on the public Storage API.
+// Backends marshal/unmarshal Entry via the codec/ package.
+type Entry struct {
+    Value     []byte
+    ExpiresAt int64  // Unix nanoseconds; 0 = no expiry
+    Version   uint64 // Monotonic per-key counter; increments on every write and delete tombstone
+}
+```
+
+`Entry` is a foundational type defined in Phase 1 alongside all other core types. Backends wire up to it in Phase 2.
+
+**`Entry.ExpiresAt` and `TTLStorage`** — these coexist and serve different roles. `Entry.ExpiresAt` is the storage-layer representation of expiry embedded in every record. `TTLStorage.PutWithTTL` is a convenience API: it converts a `time.Duration` into `Entry.ExpiresAt` before writing — not a separate mechanism. Backends that support engine-native expiry scheduling (e.g. a background sweeper) can honour `ExpiresAt` natively; others check it on read and return `ErrKeyNotFound` for expired entries. The `TTLStorage` interface signals native engine support; it is not made redundant by `Entry.ExpiresAt`.
+
+### API Hierarchy
+
+```
+Storage.Get / Put / Delete          — MVP (Phase 1)
+CASStorage.CompareAndSwap           — MVP optional, single-node (Phase 3)
+ScanStorage.Scan                    — required for shard transfer (Phase 2)
+TTLStorage.PutWithTTL               — convenience wrapper over Entry.ExpiresAt (Phase 2)
+Batch (atomic multi-key, one node)  — post-MVP
+Transaction (single-node ACID)      — post-MVP
+Distributed transaction             — out of scope v1
+```
 
 Encryption at rest is backend-dependent and out of scope for the library core — users configure it on their chosen storage backend if supported.
 
@@ -259,7 +309,14 @@ type TransferStore interface {
 
 Keys under prefix `transfer/`. Survives process restart; not sharded.
 
-**`HintStore`** (local, per-node) — hinted handoff write-ahead buffer. Reference impl persists in local `MetaStore` under prefix `hints/`. Not user data.
+**`HintStore`** (local, per-node) — hinted handoff write-ahead buffer. Stores writes destined for temporarily unavailable replica nodes; delivered on node recovery. Reference impl persists in local `MetaStore` under prefix `hints/`. Not user data.
+
+```go
+type HintStore interface {
+    PutHint(ctx context.Context, key string, targetNode string) error
+    GetHints(ctx context.Context, nodeID string) ([]Hint, error)
+}
+```
 
 **`DedupStore`** (local, per-node) — idempotency cache for `RequestID` dedup:
 
@@ -280,6 +337,13 @@ type NodeStore interface {
     SetNodeID(ctx context.Context, id string) error
     LocalConfig(ctx context.Context) (NodeLocalConfig, error)
 }
+
+// NodeLocalConfig holds per-node operational parameters written at bootstrap.
+type NodeLocalConfig struct {
+    ClientAddr   string   // address this node advertises for client-facing traffic
+    InternalAddr string   // address for cluster-internal gRPC
+    Role         NodeRole
+}
 ```
 
 Prefix `node/`. Written once at bootstrap. Cluster membership is `Membership`, not `NodeStore`.
@@ -295,11 +359,42 @@ type CredentialStore interface {
 }
 ```
 
-Reference: bbolt-backed `CredentialStore` under prefix `auth/`. Alternative: `ExternalCredentialStore` wrapping JWKS/OIDC — validate-only, no local user DB. v1 covers credentials + opaque `Principal` claims; full RBAC via optional `RoleStore` in Phase 7.
+Reference: bbolt-backed `CredentialStore` under prefix `auth/`. Alternative: `ExternalCredentialStore` wrapping JWKS/OIDC — validate-only, no local user DB. Static API key + bbolt `CredentialStore` are delivered in Phase 4c; full RBAC via optional `RoleStore` in Phase 7.
+
+#### Three tiers of state
+
+Every piece of data in the system belongs to one of three tiers. Getting this wrong — especially putting cluster coordination state in the user data plane — causes circular dependencies that are very hard to untangle.
+
+| Tier | Store | Consistency | Example data |
+| ---- | ----- | ----------- | ------------ |
+| **User data** | `Storage` (sharded, hash ring) | Per-key owner / quorum | User keys and values |
+| **Local control** | `MetaStore` (per-node, not sharded) | Local durability only | Transfer checkpoints, hints, dedup cache, credentials |
+| **Cluster coordination** | `Membership` backend | Strongly consistent | Node registry, liveness, ring generation tokens |
+
+#### Why cluster coordination needs a separate backend
+
+Cluster membership **cannot** live in the same sharded user KV this library is building. The problem is circular: to route a request you need to know which nodes exist, but to know which nodes exist you need to talk to the cluster — which requires routing. The solution is a coordination backend that is completely independent of the data plane.
+
+- **Phase 1–4 (MVP, static):** a static config file is the `Membership` implementation — no external dependency. Nodes are listed in config; operator restarts to change membership.
+- **Phase 5 (dynamic, production):** etcd-backed `Membership` is the reference implementation. etcd's watch/lease API provides the event stream that drives `MembershipEvent` — the same events that trigger ring recalculation, `LBConfigSync`, and shard redistribution. etcd is purpose-built for this pattern and avoids the need to bootstrap consensus inside the data plane itself.
+- **Phase 7 (learning path):** Raft-backed membership via `RaftService` proto — understand how etcd-like consensus works from first principles.
+
+The `Membership` interface abstracts over all of these. Adapters satisfy it by wrapping a `CoordinationStore`:
+
+```go
+// CoordinationStore is a design sketch — not a required MVP interface.
+// It shows the minimal contract that static config, etcd, and Raft all satisfy,
+// which is why Membership adapters can wrap any of them interchangeably.
+type CoordinationStore interface {
+    Get(ctx context.Context, key string) ([]byte, error)
+    Put(ctx context.Context, key string, value []byte) error
+    Watch(ctx context.Context, prefix string) (<-chan Event, error)
+}
+```
 
 #### Cluster-wide meta (via `Membership`)
 
-Do not duplicate etcd/raft. Cluster-scoped records are owned by the `Membership` backend:
+Cluster-scoped records are owned by the `Membership` backend — do not duplicate them in `MetaStore`:
 
 | Record | Owner |
 | ------ | ----- |
@@ -369,6 +464,19 @@ Reference implementations: HTTP, gRPC. HTTP is valid for client-facing — easy 
 
 Pluggable authentication and authorization. Auth runs **before** routing and replication.
 
+**Phase delivery:**
+
+| Item | Phase |
+| ---- | ----- |
+| `Authenticator`/`Authorizer` interfaces + noop | Phase 1 |
+| Static API key via `CredentialStore` (bbolt) | Phase 4c |
+| TLS on client-facing gRPC/HTTP | Phase 4c |
+| mTLS on internal cluster gRPC | Phase 4c |
+| JWT / OIDC via `ExternalCredentialStore` | Phase 7 |
+| `RoleStore` / full RBAC | Phase 7 |
+
+mTLS on internal cluster gRPC is **recommended from first multi-node deployment** (Phase 4c). It is not an advanced feature — running an unencrypted cluster network is a security risk from the moment nodes communicate. The library wires TLS via `*tls.Config`; cert provisioning is the operator's responsibility.
+
 ```go
 type Principal interface {
     ID() string
@@ -388,9 +496,9 @@ Wire points:
 
 - gRPC: unary + stream interceptors on `TransportServer` and gateway
 - HTTP: middleware wrapper around `RequestHandler`
-- Internal cluster: optional mTLS-as-identity (`Principal` derived from client cert CN/SAN)
+- Internal cluster: mTLS-as-identity (`Principal` derived from client cert CN/SAN) — Phase 4c
 
-Reference implementations: **noop** (default), **static API key** (via `CredentialStore`), **JWT** (optional dependency, via `ExternalCredentialStore`).
+Reference implementations: **noop** (Phase 1 default), **static API key** via `CredentialStore` (Phase 4c), **JWT** via `ExternalCredentialStore` (Phase 7).
 
 `Authenticator`/`Authorizer` consume `CredentialStore` when configured; noop when not.
 
@@ -406,8 +514,8 @@ type TLSConfig struct {
 
 Accepted by all servers and `NodePool` dial options:
 
-- Server TLS (client-facing)
-- mTLS (internal cluster — recommended default for multi-node)
+- Server TLS (client-facing) — Phase 4c
+- mTLS (internal cluster — recommended default, Phase 4c)
 - Cert rotation is user responsibility; library accepts `*tls.Config`
 
 ### Routing
@@ -429,25 +537,43 @@ The `Membership` interface is fully pluggable, but each backend carries differen
 | -------- | ----------- | ---------------- | ------------------- |
 | Single node, no replication | none | linearizable (single writer) | n/a |
 | Sharded, no replication | none | per-key owner is authoritative | n/a |
-| Leaderless quorum | N/W/R | tunable: `R+W > N` → read-your-writes possible | **LWW** via `(HLC timestamp, node_id)` tuple on every write |
+| Leaderless quorum | N/W/R | tunable: `R+W > N` → read-your-writes possible | **LWW** via `(wall_clock_time, node_id)` — HLC deferred to post-MVP |
 | Leader-based (Raft) | per-shard leader | linearizable per shard | Raft log ordering |
+
+> **Static membership footnote:** when using the static `Membership` implementation (MVP default), split-brain requires manual operator intervention — edit the config and restart affected nodes. Automatic split-brain detection requires a dynamic membership backend (Phase 5+).
 
 Shared write descriptor used by replication and transfer:
 
 ```go
+// OpType identifies the kind of write operation.
+type OpType int
+
+const (
+    OpPut    OpType = iota
+    OpDelete
+)
+
+// Operation is the unit of replication and shard transfer — carries a write across the network.
+// Distinct from Entry: Operation is the network/log envelope; Entry is the storage-layer record.
 type Operation struct {
-    Type      OpType // Put, Delete
+    Type      OpType
     Key       string
     Value     []byte // nil for Delete
     Version   Version
-    RequestID string // idempotency key for retries
+    RequestID string // propagated for logging and tracing; exactly-once dedup requires Phase 6
 }
 
+// Version is the replication ordering key for LWW conflict resolution across replicas.
+// Distinct from Entry.Version (monotonic uint64 per-key counter used for CAS at the storage layer).
 type Version struct {
-    Timestamp time.Time // or uint64 HLC
+    Timestamp time.Time // wall-clock time at write origin; HLC upgrade is post-MVP
     NodeID    string
 }
 ```
+
+**Version semantics:**
+- `Entry.Version` (uint64) — per-key monotonic counter incremented on every write at the storage layer. Used by `CASStorage` to compare-and-swap without reading the value.
+- `Operation.Version` (Timestamp + NodeID) — write descriptor populated by the node that accepts the write. Used by replication for LWW ordering across replicas. These two versions are distinct and serve different purposes; do not conflate them.
 
 Split-brain handling depends on membership backend:
 
@@ -465,17 +591,13 @@ type Replicator interface {
     Read(ctx context.Context, key string) ([]byte, error) // quorum read
 }
 
-type HintStore interface {
-    PutHint(ctx context.Context, key string, targetNode string) error
-    GetHints(ctx context.Context, nodeID string) ([]Hint, error)
-}
 ```
 
 Reference implementations: leaderless quorum, leader-based. Configurable N (replicas), W (write quorum), R (read quorum).
 
-- **Hinted handoff** — when a replica node is temporarily unavailable, writes are stored as hints in local `MetaStore` (`hints/` prefix) and delivered on recovery
+- **Hinted handoff** — when a replica node is temporarily unavailable, writes are stored as hints in local `MetaStore` (`hints/` prefix) via `HintStore` (defined in Control Plane Storage above) and delivered on recovery
 - **Read repair** — stale reads trigger background repair to the latest version
-- **Idempotency** — replicas deduplicate by `RequestID` via `DedupStore` on retry
+- **Idempotency** — replicas deduplicate by `RequestID` via `DedupStore` (Phase 6; not required for MVP single-node path)
 
 ### Cluster Membership
 
@@ -486,9 +608,28 @@ type Membership interface {
     Leave(ctx context.Context, nodeID string) error
     Watch(ctx context.Context, fn func(event MembershipEvent)) error
 }
+
+// MembershipEvent is fired by Watch whenever cluster topology changes.
+// Subscribers (Router, LBConfigSync, ShardService) react to these events.
+type MembershipEvent struct {
+    Type NodeEventType // Join, Leave, Fail
+    Node NodeInfo
+}
+
+type NodeEventType int
+
+const (
+    NodeJoined NodeEventType = iota
+    NodeLeft
+    NodeFailed
+)
 ```
 
-Reference implementations: static config, gossip (hand-rolled for learning), etcd-backed, raft-backed.
+Reference implementations:
+- **static config** — MVP default; no external dependency; no dynamic events (operators edit config and restart)
+- **in-memory dynamic** — no external dependency; fires `MembershipEvent` on `Join`/`Leave` calls; used for Phase 5 integration testing without etcd
+- **etcd-backed** — Phase 5 production reference; watch/lease API drives events reliably
+- **gossip / raft-backed** — Phase 7 learning paths
 
 Each backend is a valid `Membership` implementation, but operators must understand the consistency trade-offs documented in the matrix above.
 
@@ -687,6 +828,21 @@ service ForwardService {
     rpc Forward(ForwardRequest) returns (ForwardResponse);
 }
 
+// ForwardRequest carries the original client operation plus hop metadata.
+message ForwardRequest {
+    string origin_node_id = 1; // the node that first received the client request
+    int32  hop_count      = 2; // incremented on each forward; request dropped if > max_hops
+    string key            = 3;
+    bytes  value          = 4; // empty for Get/Delete
+    string op_type        = 5; // "get", "put", "delete"
+    string request_id     = 6;
+}
+
+message ForwardResponse {
+    bytes  value = 1; // populated for Get
+    string error = 2; // error code string; empty = success
+}
+
 // Write propagation to replicas
 service ReplicationService {
     rpc Replicate(ReplicateRequest) returns (ReplicateResponse);
@@ -809,11 +965,12 @@ The double-write window ensures writes during transfer are not lost.
 
 #### Cutover criteria
 
-D is ready when all of the following hold:
+D is ready when both of the following hold:
 
 1. Bulk `TransferShard` stream completes with a `TransferCheckpoint` persisted in `TransferStore` (last key + version)
 2. D has applied all double-writes since checkpoint (tracked via per-shard sequence number in `TransferStore`)
-3. Merkle root of D's range matches predecessor's (optional verification step)
+
+> Post-MVP: optional Merkle root comparison between D's range and the predecessor's as an integrity check (Dynamo-style). Non-trivial to implement; deferred.
 
 ### Leave
 
@@ -873,13 +1030,27 @@ Correct tools for spikes (all in-process, zero latency):
 
 ## Incremental Build Plan
 
+```mermaid
+flowchart LR
+  P1[Phase1_Foundation_types] --> P2[Phase2_Persistence_codec]
+  P2 --> P3[Phase3_NodeSharding_CAS]
+  P3 --> P4[Phase4_MultiNode_gRPC_ring]
+  P4 --> P4b[Phase4b_Client_LBConfigSync]
+  P4b --> P4c[Phase4c_Auth_TLS_mTLS]
+  P4c --> P5[Phase5_DynamicCluster_etcd]
+  P5 --> P5b[Phase5b_SmartGateway]
+  P5b --> P6[Phase6_Replication]
+  P6 --> P7[Phase7_Advanced]
+```
+
 ### Phase 1 — Foundation
 
 - Define core interfaces: `Storage`, `TransportServer`, `TransportClient`
 - Define all core error types (including `ErrUnauthorized`, `ErrForbidden`, `ErrInvalidArgument`)
-- Data/control plane distinction documented
+- Define all core types: `Entry`, `OpType`, `Operation`, `Version`, `MembershipEvent`, `NodeLocalConfig`
+- `codec/` package: `Entry` marshal/unmarshal (JSON v1)
 - `MetaStore` interface; in-memory reference; `NodeStore`
-- In-memory map storage implementation (user data plane)
+- In-memory map storage implementation (user data plane) — stores `Entry` bytes via `codec/`
 - HTTP transport implementation
 - Single node, no distribution, works end to end
 - `slog` logging wired into every component from day one
@@ -889,11 +1060,11 @@ Correct tools for spikes (all in-process, zero latency):
 
 ### Phase 2 — Persistence (two paths, user chooses)
 
-- **Path A — bbolt**: bbolt storage implementation for user `DataStore`; separate bbolt `MetaStore` reference (`meta.db`)
-- **Path B — hand-rolled WAL**: implement append-only WAL log, recovery on startup, compaction — learning implementation to understand how bbolt works under the hood
+- **Path A — bbolt**: bbolt storage implementation for user `DataStore`; separate bbolt `MetaStore` reference (`meta.db`); both persist `Entry` bytes via `codec/`
+- **Path B — hand-rolled WAL**: implement append-only WAL log, recovery on startup, compaction — learning implementation; also persists `Entry` bytes
 - `Scan` added to storage interface (required by both paths)
+- `TTLStorage` on both paths — `PutWithTTL` converts `time.Duration` → `Entry.ExpiresAt`; expiry checked on read
 - `StorageState.SizeBytes` and `MetaStoreState.SizeBytes` populated
-- Optional `TTLStorage` on bbolt path if backend supports it
 
 ### Phase 3 — Node-level Sharding
 
@@ -904,18 +1075,17 @@ Correct tools for spikes (all in-process, zero latency):
 - `Router` interface introduced (passthrough initially)
 - `ShardState` fully populated, token bucket level observable via state
 - `Metrics` interface introduced, wired into shard operations
-- `TTLStorage` on in-memory map (Phase 3 primary TTL path)
-- `DedupStore` (in-memory)
+- `CASStorage` reference implementations (in-memory map + bbolt) — single-node CAS straightforward with per-shard RWMutex
 
 ### Phase 4 — Static Multi-Node
 
 - gRPC transport implementation
 - `NodePool` interface and persistent connections to peers
-- Static cluster config
+- Static cluster config; static `Membership` implementation
 - Consistent hash ring router
 - Request forwarding (`ForwardService`) when node doesn't own a key
 - Dumb-LB + peer forwarding documented as default multi-node topology
-- `KVService` and `ForwardService` protos
+- `KVService` and `ForwardService` protos (with `ForwardRequest`/`ForwardResponse`)
 - `PeerState` populated in `NodeState`
 - Optional `/debug/state` HTTP endpoint on client-facing server
 - `NodeRole` config (`ClientFacing`, `StorageOnly`, `Gateway`)
@@ -925,6 +1095,14 @@ Correct tools for spikes (all in-process, zero latency):
 - `client/` facade (`Client` interface, `ClientConfig`, retry policy)
 - `LBConfigSync` watches membership, emits backend list
 - Reference `LBConfigSink`: file writer (nginx upstream block), stdout, noop
+
+### Phase 4c — Auth, TLS, mTLS
+
+- `CredentialStore` bbolt reference implementation (prefix `auth/`)
+- Static API key `Authenticator` enforced on gRPC interceptors and HTTP middleware
+- TLS on client-facing gRPC and HTTP servers
+- mTLS on internal cluster gRPC (`NodePool` dial options + server config) — **recommended default, not optional**
+- `security/` package: TLS helpers, `CredentialStore` wiring
 
 ### Phase 5 — Dynamic Cluster
 
@@ -938,6 +1116,8 @@ Correct tools for spikes (all in-process, zero latency):
 - `ClusterState` fully observable — assembled from `Membership` + `TransferStore` + `Storage`
 - Transfer progress logged and exposed via state inspection (`TransferState`, `ActiveTransfers`)
 - Dumb LB pool timing: node enters nginx pool only after `StateReady`
+- **In-memory dynamic `Membership`** — fires `MembershipEvent` on `Join`/`Leave`; no external dependency; used for integration testing without etcd
+- **etcd-backed `Membership`** — production reference; watch/lease API drives ring recalculation, `LBConfigSync`, redistribution
 
 ### Phase 5b — Smart Gateway
 
@@ -951,26 +1131,25 @@ Correct tools for spikes (all in-process, zero latency):
 - `Operation` / `Version` types wired through write path
 - Leaderless quorum implementation
 - Configurable N, R, W
-- bbolt-backed `HintStore`; `DedupStore` with TTL
+- bbolt-backed `HintStore`; `DedupStore` with TTL (exactly-once dedup on replicas)
 - Read repair
-- Idempotency via `RequestID` dedup on replicas
+- Idempotency via `RequestID` dedup on replicas (`DedupStore`)
 - Replication lag and pending hints observable via `NodeState`
 
 ### Phase 7 — Advanced (two paths per item, user chooses)
 
 - **Gossip membership**:
   - Path A: hand-rolled gossip protocol (learning)
-  - Path B: use existing gossip library
+  - Path B: existing gossip library
 - **Raft consensus**:
-  - Path A: hand-rolled Raft implementation using `RaftService` proto (learning)
+  - Path A: hand-rolled Raft using `RaftService` proto (learning)
   - Path B: `hashicorp/raft` which owns its own transport (production)
-- Adaptive capacity at cluster level
+- Adaptive capacity at cluster level (borrow across nodes, not just within a node)
 - Leader-based replication
-- `CredentialStore` reference (bbolt); external JWKS adapter; optional `RoleStore`
-- Auth reference implementations: static API key, JWT
-- mTLS on internal cluster transport
-- `Tracer` interface + request_id/trace_id propagation
-- `CASStorage` implementations
+- JWT / OIDC via `ExternalCredentialStore`; optional `RoleStore` / RBAC
+- `Tracer` interface + trace_id propagation via gRPC metadata and HTTP headers
+- Merkle root cutover verification (optional integrity check, post-MVP)
+- HLC timestamps on `Operation.Version` (upgrade from wall-clock)
 
 ---
 
@@ -980,6 +1159,7 @@ Correct tools for spikes (all in-process, zero latency):
 | ----- | -------- | ------------- |
 | Phase 4 | `KVService`, `ForwardService` | `KVService` on ClientFacing + Gateway; `ForwardService` on ClientFacing only |
 | Phase 4b | (no new services) | Client uses existing `KVService` |
+| Phase 4c | (no new services) | Adds TLS/mTLS to existing gRPC servers and `NodePool` |
 | Phase 5 | + `ShardService`, `ClusterService` | Internal port on all storage nodes; `ShardService` moves user keys only |
 | Phase 5b | (no new services) | Gateway binds `KVService` only |
 | Phase 6 | + `ReplicationService` | Internal port |
@@ -1007,6 +1187,8 @@ For any CLI tooling built on top of the library:
 - How to expose `ClusterState` to external operators — HTTP endpoint, gRPC reflection, both?
 - Backup/export format — future phase; note control-plane `meta.db` should be backed up separately from user data
 - Multi-gateway `CredentialStore` — external IdP or shared store recommended; single-gateway can use local bbolt
+- **Scan semantics in multi-node context** — MVP uses parallel fan-out to all nodes with best-effort merge. Alternatives: coordinator-routed range scan, range-partitioned routing. Fan-out is simple but produces non-coordinated snapshots; alternatives require more infrastructure.
+- **Batch API** — whether `Batch` (atomic multi-key, single node) becomes a first-class `Client` API or stays a backend-specific implementation detail. Single-node Batch does not require distributed coordination.
 
 ---
 
@@ -1018,6 +1200,29 @@ For any CLI tooling built on top of the library:
 - Full RBAC user management UI
 - Replicating local meta stores between nodes (each node owns its own `meta.db`)
 - Storing user KV in meta store (strict namespace separation enforced by convention)
+- Cross-shard / distributed transactions
+- Coordinated multi-key atomicity across nodes (Batch scoped to single node only)
+
+---
+
+## Post-MVP Backlog
+
+Items below are deferred — design is acknowledged, implementation is not in scope for the library MVP.
+
+| Item | Why deferred | Target phase |
+| ---- | ------------ | ------------ |
+| Merkle root cutover verification | Non-trivial; not required for correctness | Phase 7 |
+| Hybrid Logical Clocks (HLC) | LWW with wall-clock is sufficient for MVP | Phase 7 |
+| Full RequestID `DedupStore` (exactly-once) | Requires replication; meaningless without quorum | Phase 6 |
+| Gossip membership (two paths) | Static + etcd covers MVP; gossip is a learning path | Phase 7 |
+| Raft consensus (two paths) | Same as above | Phase 7 |
+| JWT / OIDC authentication | Static API key is sufficient for MVP | Phase 7 |
+| Full RBAC (`RoleStore`) | Opaque `Principal` is sufficient for MVP | Phase 7 |
+| Tracer interface + trace_id propagation | `RequestID` covers basic tracing in MVP | Phase 7 |
+| Cluster-level adaptive capacity | Per-shard token bucket covers MVP burst | Phase 7 |
+| Leader-based replication | Leaderless quorum covers MVP | Phase 7 |
+| Coordinated cluster-wide Scan snapshot | Complex distributed primitive | Future |
+| Distributed / cross-shard transactions | Out of scope v1 | — |
 
 ---
 
