@@ -11,23 +11,23 @@ import (
 	"github.com/antgobar/kvstore/pkg/store"
 )
 
-func TestEndToEndPutKeyGettable(t *testing.T) {
-	httpClient := client.NewHttpClient("http://localhost:8080", time.Second*5)
+func TestGrpcMapEndToEndPutKeyGettable(t *testing.T) {
+	grpcClient := client.NewGrpcClient("http://localhost:8080", time.Second*5)
 	mapStore := store.NewMapStore()
-	httpServer := server.NewHttpServer("localhost:8080", mapStore, time.Second*5)
+	grpcServer := server.NewGrpcServer("localhost:8080", mapStore, time.Second*5)
 
-	go httpServer.Run()
-	defer httpServer.Stop()
+	go grpcServer.Run()
+	defer grpcServer.Stop()
 
 	time.Sleep(100 * time.Millisecond)
 
 	ctx := context.TODO()
-	if err := httpClient.Put(ctx, "foo", []byte("bar")); err != nil {
+	if err := grpcClient.Put(ctx, "foo", []byte("bar")); err != nil {
 		t.Fatalf("Put failed: %v", err)
 	}
 
 	want := []byte("bar")
-	got, err := httpClient.Get(ctx, "foo")
+	got, err := grpcClient.Get(ctx, "foo")
 	if err != nil {
 		t.Fatalf("Get failed: %v", err)
 	}
@@ -36,26 +36,26 @@ func TestEndToEndPutKeyGettable(t *testing.T) {
 	}
 }
 
-func TestEndToEndPutKeyUpdatedRetrievable(t *testing.T) {
-	httpClient := client.NewHttpClient("http://localhost:8080", time.Second*5)
+func TestGrpcMapEndToEndPutKeyUpdatedRetrievable(t *testing.T) {
+	grpcClient := client.NewGrpcClient("http://localhost:8080", time.Second*5)
 	mapStore := store.NewMapStore()
-	httpServer := server.NewHttpServer("localhost:8080", mapStore, time.Second*5)
+	grpcServer := server.NewGrpcServer("localhost:8080", mapStore, time.Second*5)
 
-	go httpServer.Run()
-	defer httpServer.Stop()
+	go grpcServer.Run()
+	defer grpcServer.Stop()
 
 	time.Sleep(100 * time.Millisecond)
 
 	ctx := context.TODO()
-	if err := httpClient.Put(ctx, "foo", []byte("bar")); err != nil {
+	if err := grpcClient.Put(ctx, "foo", []byte("bar")); err != nil {
 		t.Fatalf("Put failed: %v", err)
 	}
-	if err := httpClient.Put(ctx, "foo", []byte("baz")); err != nil {
+	if err := grpcClient.Put(ctx, "foo", []byte("baz")); err != nil {
 		t.Fatalf("Put failed: %v", err)
 	}
 
 	want := []byte("baz")
-	got, err := httpClient.Get(ctx, "foo")
+	got, err := grpcClient.Get(ctx, "foo")
 	if err != nil {
 		t.Fatalf("Get failed: %v", err)
 	}
@@ -64,10 +64,10 @@ func TestEndToEndPutKeyUpdatedRetrievable(t *testing.T) {
 	}
 }
 
-func TestEndToEndGetNonExistentKeyErrorsNotFound(t *testing.T) {
-	httpClient := client.NewHttpClient("http://localhost:8080", time.Second*5)
+func TestGrpcMapEndToEndGetNonExistentKeyErrorsNotFound(t *testing.T) {
+	httpClient := client.NewGrpcClient("http://localhost:8080", time.Second*5)
 	mapStore := store.NewMapStore()
-	httpServer := server.NewHttpServer("localhost:8080", mapStore, time.Second*5)
+	httpServer := server.NewGrpcServer("localhost:8080", mapStore, time.Second*5)
 
 	go httpServer.Run()
 	defer httpServer.Stop()
@@ -82,8 +82,4 @@ func TestEndToEndGetNonExistentKeyErrorsNotFound(t *testing.T) {
 	if !containsNotFound(err.Error()) {
 		t.Errorf("expected error to contain 'not found', got: %v", err)
 	}
-}
-
-func containsNotFound(msg string) bool {
-	return bytes.Contains(bytes.ToLower([]byte(msg)), []byte("not found"))
 }

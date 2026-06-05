@@ -11,6 +11,6 @@ const serverAddr = "localhost:50051"
 const timeout = time.Second * 10
 
 func main() {
-	grpcClient := client.NewGrpcClient(serverAddr)
+	grpcClient := client.NewGrpcClient(serverAddr, timeout)
 	cli.Run(grpcClient)
 }
