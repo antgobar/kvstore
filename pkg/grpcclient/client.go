@@ -1,4 +1,4 @@
-package client
+package grpcclient
 
 import (
 	"context"
@@ -21,7 +21,7 @@ func (s *GrpcClient) Close() error {
 	return s.connection.Close()
 }
 
-func NewGrpcClient(addr string, timeout time.Duration) *GrpcClient {
+func New(addr string, timeout time.Duration) *GrpcClient {
 	conn, err := grpc.NewClient("dns:///"+addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("fail to dial: %v", err)

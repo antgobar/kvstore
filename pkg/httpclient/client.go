@@ -1,4 +1,4 @@
-package client
+package httpclient
 
 import (
 	"bytes"
@@ -17,7 +17,7 @@ type HttpClient struct {
 	client     http.Client
 }
 
-func NewHttpClient(serverAddr string, timeout time.Duration) *HttpClient {
+func New(serverAddr string, timeout time.Duration) *HttpClient {
 	httpClient := http.Client{Timeout: timeout}
 	return &HttpClient{
 		ServerAddr: serverAddr,

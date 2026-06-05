@@ -6,18 +6,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/antgobar/kvstore/pkg/client"
-	"github.com/antgobar/kvstore/pkg/server"
-	"github.com/antgobar/kvstore/pkg/store"
+	client "github.com/antgobar/kvstore/pkg/httpclient"
+	server "github.com/antgobar/kvstore/pkg/httpserver"
+	store "github.com/antgobar/kvstore/pkg/mapstore"
 )
 
 const httpTestServerAddr = "http://localhost:8090"
 const httpClientRequestAddr = "localhost:8090"
 
 func TestHttpMapEndToEndPutKeyGettable(t *testing.T) {
-	httpClient := client.NewHttpClient(httpTestServerAddr, time.Second*5)
-	mapStore := store.NewMapStore()
-	httpServer := server.NewHttpServer(httpClientRequestAddr, mapStore, time.Second*5)
+	httpClient := client.New(httpTestServerAddr, time.Second*5)
+	mapStore := store.New()
+	httpServer := server.New(httpClientRequestAddr, mapStore, time.Second*5)
 
 	go httpServer.Run()
 	defer httpServer.Stop()
@@ -40,9 +40,9 @@ func TestHttpMapEndToEndPutKeyGettable(t *testing.T) {
 }
 
 func TestHttpMapEndToEndPutKeyUpdatedRetrievable(t *testing.T) {
-	httpClient := client.NewHttpClient(httpTestServerAddr, time.Second*5)
-	mapStore := store.NewMapStore()
-	httpServer := server.NewHttpServer(httpClientRequestAddr, mapStore, time.Second*5)
+	httpClient := client.New(httpTestServerAddr, time.Second*5)
+	mapStore := store.New()
+	httpServer := server.New(httpClientRequestAddr, mapStore, time.Second*5)
 
 	go httpServer.Run()
 	defer httpServer.Stop()
@@ -68,9 +68,9 @@ func TestHttpMapEndToEndPutKeyUpdatedRetrievable(t *testing.T) {
 }
 
 func TestHttpMapEndToEndGetNonExistentKeyErrorsNotFound(t *testing.T) {
-	httpClient := client.NewHttpClient(httpTestServerAddr, time.Second*5)
-	mapStore := store.NewMapStore()
-	httpServer := server.NewHttpServer(httpClientRequestAddr, mapStore, time.Second*5)
+	httpClient := client.New(httpTestServerAddr, time.Second*5)
+	mapStore := store.New()
+	httpServer := server.New(httpClientRequestAddr, mapStore, time.Second*5)
 
 	go httpServer.Run()
 	defer httpServer.Stop()

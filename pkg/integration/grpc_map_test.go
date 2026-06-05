@@ -6,17 +6,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/antgobar/kvstore/pkg/client"
-	"github.com/antgobar/kvstore/pkg/server"
-	"github.com/antgobar/kvstore/pkg/store"
+	client "github.com/antgobar/kvstore/pkg/grpcclient"
+	server "github.com/antgobar/kvstore/pkg/grpcserver"
+	store "github.com/antgobar/kvstore/pkg/mapstore"
 )
 
 const grpcTestServerAddr = "localhost:50051"
 const grpcClientRequestAddr = "localhost:50051"
 
 func TestGrpcMapEndToEndPutKeyGettable(t *testing.T) {
-	grpcClient := client.NewGrpcClient(grpcTestServerAddr, time.Second*5)
-	mapStore := store.NewMapStore()
+	grpcClient := client.New(grpcTestServerAddr, time.Second*5)
+	mapStore := store.New()
 	grpcServer := server.NewGrpcServer(grpcClientRequestAddr, mapStore, time.Second*5)
 
 	go grpcServer.Run()
@@ -40,8 +40,8 @@ func TestGrpcMapEndToEndPutKeyGettable(t *testing.T) {
 }
 
 func TestGrpcMapEndToEndPutKeyUpdatedRetrievable(t *testing.T) {
-	grpcClient := client.NewGrpcClient(grpcTestServerAddr, time.Second*5)
-	mapStore := store.NewMapStore()
+	grpcClient := client.New(grpcTestServerAddr, time.Second*5)
+	mapStore := store.New()
 	grpcServer := server.NewGrpcServer(grpcClientRequestAddr, mapStore, time.Second*5)
 
 	go grpcServer.Run()
@@ -68,8 +68,8 @@ func TestGrpcMapEndToEndPutKeyUpdatedRetrievable(t *testing.T) {
 }
 
 func TestGrpcMapEndToEndGetNonExistentKeyErrorsNotFound(t *testing.T) {
-	httpClient := client.NewGrpcClient(grpcTestServerAddr, time.Second*5)
-	mapStore := store.NewMapStore()
+	httpClient := client.New(grpcTestServerAddr, time.Second*5)
+	mapStore := store.New()
 	httpServer := server.NewGrpcServer(grpcClientRequestAddr, mapStore, time.Second*5)
 
 	go httpServer.Run()

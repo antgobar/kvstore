@@ -1,4 +1,4 @@
-package store
+package mapstore
 
 import (
 	"context"
@@ -12,7 +12,7 @@ type MapStore struct {
 	mu   sync.RWMutex
 }
 
-func NewMapStore() *MapStore {
+func New() *MapStore {
 	return &MapStore{
 		data: make(map[string][]byte),
 	}
