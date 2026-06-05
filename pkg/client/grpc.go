@@ -14,6 +14,11 @@ import (
 type GrpcClient struct {
 	client     pb.KvStoreClient
 	connection *grpc.ClientConn
+	timeout    time.Duration
+}
+
+func (s *GrpcClient) Close() error {
+	return s.connection.Close()
 }
 
 func NewGrpcClient(addr string, timeout time.Duration) *GrpcClient {
@@ -24,11 +29,12 @@ func NewGrpcClient(addr string, timeout time.Duration) *GrpcClient {
 
 	client := pb.NewKvStoreClient(conn)
 
-	return &GrpcClient{client, conn}
+	return &GrpcClient{client, conn, timeout}
 }
 
 func (s *GrpcClient) Put(ctx context.Context, key string, value []byte) error {
-	defer s.connection.Close()
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
 	_, err := s.client.Put(ctx, &pb.PutRequest{
 		Key:   key,
 		Value: value,
@@ -37,7 +43,8 @@ func (s *GrpcClient) Put(ctx context.Context, key string, value []byte) error {
 }
 
 func (s *GrpcClient) Get(ctx context.Context, key string) ([]byte, error) {
-	defer s.connection.Close()
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
 	res, err := s.client.Get(ctx, &pb.GetRequest{
 		Key: key,
 	})
@@ -48,7 +55,8 @@ func (s *GrpcClient) Get(ctx context.Context, key string) ([]byte, error) {
 }
 
 func (s *GrpcClient) Delete(ctx context.Context, key string) error {
-	defer s.connection.Close()
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
 	_, err := s.client.Delete(ctx, &pb.DeleteRequest{
 		Key: key,
 	})

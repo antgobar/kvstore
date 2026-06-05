@@ -25,6 +25,10 @@ func NewHttpClient(serverAddr string, timeout time.Duration) *HttpClient {
 	}
 }
 
+func (h *HttpClient) Close() error {
+	return nil
+}
+
 func post[Request any, Response any](ctx context.Context, c *HttpClient, endpoint string, payload Request) (*Response, error) {
 	data, err := json.Marshal(payload)
 	if err != nil {

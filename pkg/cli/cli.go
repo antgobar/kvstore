@@ -11,6 +11,7 @@ type Client interface {
 	Put(ctx context.Context, key string, value []byte) error
 	Get(ctx context.Context, key string) ([]byte, error)
 	Delete(ctx context.Context, key string) error
+	Close() error
 }
 
 type Cli struct {
@@ -26,6 +27,7 @@ func Run(client Client) {
 	switch args.Action {
 	case "put":
 		err := client.Put(ctx, args.Key, []byte(args.Value))
+		defer client.Close()
 		if err != nil {
 			log.Fatalf("error putting key %s, value %s, error: %v",
 				args.Key, args.Value, err)
@@ -34,6 +36,7 @@ func Run(client Client) {
 
 	case "get":
 		value, err := client.Get(ctx, args.Key)
+		defer client.Close()
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -42,6 +45,7 @@ func Run(client Client) {
 
 	case "delete":
 		err := client.Delete(ctx, args.Key)
+		defer client.Close()
 		if err != nil {
 			log.Fatalf("error deleting key %s, error: %v",
 				args.Key, err)
