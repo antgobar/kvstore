@@ -22,7 +22,7 @@ func TestGrpcMapEndToEndPutKeyGettable(t *testing.T) {
 	go grpcServer.Run()
 	defer grpcServer.Stop()
 
-	time.Sleep(2000 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 
 	ctx := context.TODO()
 	if err := grpcClient.Put(ctx, "foo", []byte("bar")); err != nil {
@@ -47,7 +47,7 @@ func TestGrpcMapEndToEndPutKeyUpdatedRetrievable(t *testing.T) {
 	go grpcServer.Run()
 	defer grpcServer.Stop()
 
-	time.Sleep(2000 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 
 	ctx := context.TODO()
 	if err := grpcClient.Put(ctx, "foo", []byte("bar")); err != nil {
@@ -75,7 +75,7 @@ func TestGrpcMapEndToEndGetNonExistentKeyErrorsNotFound(t *testing.T) {
 	go httpServer.Run()
 	defer httpServer.Stop()
 
-	time.Sleep(2000 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 
 	ctx := context.TODO()
 	_, err := httpClient.Get(ctx, "foo")
