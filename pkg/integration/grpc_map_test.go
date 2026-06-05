@@ -11,10 +11,13 @@ import (
 	"github.com/antgobar/kvstore/pkg/store"
 )
 
+const grpcTestServerAddr = "http://localhost:8080"
+const grpcClientRequestAddr = "localhost:8080"
+
 func TestGrpcMapEndToEndPutKeyGettable(t *testing.T) {
-	grpcClient := client.NewGrpcClient("http://localhost:8080", time.Second*5)
+	grpcClient := client.NewGrpcClient(grpcTestServerAddr, time.Second*5)
 	mapStore := store.NewMapStore()
-	grpcServer := server.NewGrpcServer("localhost:8080", mapStore, time.Second*5)
+	grpcServer := server.NewGrpcServer(grpcClientRequestAddr, mapStore, time.Second*5)
 
 	go grpcServer.Run()
 	defer grpcServer.Stop()
@@ -37,9 +40,9 @@ func TestGrpcMapEndToEndPutKeyGettable(t *testing.T) {
 }
 
 func TestGrpcMapEndToEndPutKeyUpdatedRetrievable(t *testing.T) {
-	grpcClient := client.NewGrpcClient("http://localhost:8080", time.Second*5)
+	grpcClient := client.NewGrpcClient(grpcTestServerAddr, time.Second*5)
 	mapStore := store.NewMapStore()
-	grpcServer := server.NewGrpcServer("localhost:8080", mapStore, time.Second*5)
+	grpcServer := server.NewGrpcServer(grpcClientRequestAddr, mapStore, time.Second*5)
 
 	go grpcServer.Run()
 	defer grpcServer.Stop()
@@ -65,9 +68,9 @@ func TestGrpcMapEndToEndPutKeyUpdatedRetrievable(t *testing.T) {
 }
 
 func TestGrpcMapEndToEndGetNonExistentKeyErrorsNotFound(t *testing.T) {
-	httpClient := client.NewGrpcClient("http://localhost:8080", time.Second*5)
+	httpClient := client.NewGrpcClient(grpcTestServerAddr, time.Second*5)
 	mapStore := store.NewMapStore()
-	httpServer := server.NewGrpcServer("localhost:8080", mapStore, time.Second*5)
+	httpServer := server.NewGrpcServer(grpcClientRequestAddr, mapStore, time.Second*5)
 
 	go httpServer.Run()
 	defer httpServer.Stop()
