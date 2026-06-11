@@ -2,19 +2,22 @@ package memory
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	"github.com/antgobar/kvstore/core"
 )
 
 type MemoryStore struct {
-	data map[string][]byte
-	mu   sync.RWMutex
+	data          map[string][]byte
+	mu            sync.RWMutex
+	scanBatchSize int
 }
 
 func New() *MemoryStore {
 	return &MemoryStore{
-		data: make(map[string][]byte),
+		data:          make(map[string][]byte),
+		scanBatchSize: 1,
 	}
 }
 
@@ -48,52 +51,52 @@ func (m *MemoryStore) Delete(_ context.Context, key string) error {
 	return nil
 }
 
-// func (u *MemoryStore) Scan(ctx context.Context, prefix string) (<-chan []byte, <-chan error) {
-// 	outCh := make(chan []byte)
-// 	errCh := make(chan error, 1)
+func (m *MemoryStore) Scan(ctx context.Context, prefix string) (<-chan []map[string][]byte, <-chan error) {
+	outCh := make(chan []map[string][]byte)
+	errCh := make(chan error, 1)
 
-// 	var wg sync.WaitGroup
+	var wg sync.WaitGroup
 
-// 	wg.Add(1)
+	wg.Add(1)
 
-// 	go func() {
-// 		defer wg.Done()
-// 		defer close(errCh)
+	go func() {
+		defer wg.Done()
+		defer close(errCh)
 
-// 		buff := [][]byte{}
+		buff := make([]map[string][]byte, 0)
 
-// 		for _, entry := range u.data {
-// 			if !strings.HasPrefix(entry.Key, prefix) {
-// 				continue
-// 			}
-// 			buff = append(buff, entry)
+		for key, value := range m.data {
+			if !strings.HasPrefix(key, prefix) {
+				continue
+			}
+			buff = append(buff, map[string][]byte{key: value})
 
-// 			if len(buff) < u.ScanBatch {
-// 				continue
-// 			}
+			if len(buff) < m.scanBatchSize {
+				continue
+			}
 
-// 			if len(buff) > 0 {
-// 				select {
-// 				case outCh <- buff:
-// 				case <-ctx.Done():
-// 					errCh <- ctx.Err()
-// 				}
-// 			}
+			if len(buff) > 0 {
+				select {
+				case outCh <- buff:
+				case <-ctx.Done():
+					errCh <- ctx.Err()
+				}
+			}
 
-// 		}
-// 		if len(buff) > 0 {
-// 			select {
-// 			case outCh <- buff:
-// 			case <-ctx.Done():
-// 				errCh <- ctx.Err()
-// 			}
-// 		}
-// 	}()
+		}
+		if len(buff) > 0 {
+			select {
+			case outCh <- buff:
+			case <-ctx.Done():
+				errCh <- ctx.Err()
+			}
+		}
+	}()
 
-// 	go func() {
-// 		wg.Wait()
-// 		close(outCh)
-// 	}()
+	go func() {
+		wg.Wait()
+		close(outCh)
+	}()
 
-// 	return outCh, errCh
-// }
+	return outCh, errCh
+}

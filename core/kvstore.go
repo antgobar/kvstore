@@ -23,7 +23,11 @@ type Store interface {
 	Delete(ctx context.Context, key string) error
 }
 
+type Scanner interface {
+	Scan(ctx context.Context, prefix string) (<-chan []Entry, <-chan error)
+}
+
 type ScanStore interface {
 	Store
-	Scan(ctx context.Context, prefix string) (<-chan []Entry, <-chan error)
+	Scanner
 }
