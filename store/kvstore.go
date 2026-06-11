@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	custom_errors "github.com/antgobar/kvstore/pkg/errors"
+	kvstore "github.com/antgobar/kvstore/errors"
 )
 
 type Entry struct {
@@ -59,7 +59,7 @@ func (m *UserDataStore) Get(_ context.Context, key string) (Entry, error) {
 
 	v, ok := m.data[key]
 	if !ok {
-		return Entry{}, custom_errors.ErrKeyNotFound
+		return Entry{}, kvstore.ErrKeyNotFound
 	}
 	return v, nil
 }
@@ -69,7 +69,7 @@ func (m *UserDataStore) Delete(_ context.Context, key string) error {
 	defer m.mu.Unlock()
 
 	if _, ok := m.data[key]; !ok {
-		return custom_errors.ErrKeyNotFound
+		return kvstore.ErrKeyNotFound
 	}
 
 	delete(m.data, key)

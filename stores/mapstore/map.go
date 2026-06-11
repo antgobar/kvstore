@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	custom_errors "github.com/antgobar/kvstore/pkg/errors"
+	"github.com/antgobar/kvstore/core"
 )
 
 type MapStore struct {
@@ -31,7 +31,7 @@ func (m *MapStore) Get(_ context.Context, key string) ([]byte, error) {
 
 	v, ok := m.data[key]
 	if !ok {
-		return nil, custom_errors.ErrKeyNotFound
+		return nil, core.ErrKeyNotFound
 	}
 	return v, nil
 }
@@ -41,7 +41,7 @@ func (m *MapStore) Delete(_ context.Context, key string) error {
 	defer m.mu.Unlock()
 
 	if _, ok := m.data[key]; !ok {
-		return custom_errors.ErrKeyNotFound
+		return core.ErrKeyNotFound
 	}
 
 	delete(m.data, key)

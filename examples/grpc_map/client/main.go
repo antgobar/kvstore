@@ -3,8 +3,8 @@ package main
 import (
 	"time"
 
-	"github.com/antgobar/kvstore/pkg/cli"
-	"github.com/antgobar/kvstore/pkg/transport/grpc/client"
+	"github.com/antgobar/kvstore/cli"
+	"github.com/antgobar/kvstore/transport/grpc/client"
 )
 
 const serverAddr = "localhost:50051"

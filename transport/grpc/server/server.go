@@ -8,8 +8,8 @@ import (
 	"net"
 	"time"
 
+	"github.com/antgobar/kvstore/core"
 	pb "github.com/antgobar/kvstore/internal/genproto"
-	custom_errors "github.com/antgobar/kvstore/pkg/errors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -74,7 +74,7 @@ func (s *GrpcServer) Stop() {
 }
 
 func toGrpcError(err error) error {
-	if errors.Is(err, custom_errors.ErrKeyNotFound) {
+	if errors.Is(err, core.ErrKeyNotFound) {
 		return status.Error(codes.NotFound, err.Error())
 	}
 	return status.Error(codes.Internal, err.Error())

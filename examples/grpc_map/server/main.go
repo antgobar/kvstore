@@ -3,8 +3,8 @@ package main
 import (
 	"time"
 
-	"github.com/antgobar/kvstore/pkg/stores/mapstore"
-	"github.com/antgobar/kvstore/pkg/transport/grpc/server"
+	"github.com/antgobar/kvstore/stores/mapstore"
+	"github.com/antgobar/kvstore/transport/grpc/server"
 )
 
 func main() {

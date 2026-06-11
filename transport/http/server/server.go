@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	custom_errors "github.com/antgobar/kvstore/pkg/errors"
-	"github.com/antgobar/kvstore/pkg/transport/http/payload"
+	"github.com/antgobar/kvstore/core"
+	"github.com/antgobar/kvstore/transport/http/payload"
 )
 
 type Storer interface {
@@ -94,7 +94,7 @@ func (s *HttpServer) handleGet(w http.ResponseWriter, r *http.Request) {
 
 	value, err := s.Store.Get(ctx, k.Key)
 	if err != nil {
-		if err == custom_errors.ErrKeyNotFound {
+		if err == core.ErrKeyNotFound {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
@@ -124,7 +124,7 @@ func (s *HttpServer) handleDelete(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.RequestTimeout)
 	defer cancel()
 	if err := s.Store.Delete(ctx, k.Key); err != nil {
-		if err == custom_errors.ErrKeyNotFound {
+		if err == core.ErrKeyNotFound {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}

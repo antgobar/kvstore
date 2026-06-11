@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/antgobar/kvstore/pkg/transport/http/payload"
+	"github.com/antgobar/kvstore/transport/http/payload"
 )
 
 type HttpClient struct {

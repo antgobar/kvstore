@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	store "github.com/antgobar/kvstore/pkg/stores/mapstore"
-	client "github.com/antgobar/kvstore/pkg/transport/http/client"
-	server "github.com/antgobar/kvstore/pkg/transport/http/server"
+	store "github.com/antgobar/kvstore/stores/mapstore"
+	client "github.com/antgobar/kvstore/transport/http/client"
+	server "github.com/antgobar/kvstore/transport/http/server"
 )
 
 const httpTestServerAddr = "http://localhost:8090"
