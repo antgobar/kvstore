@@ -8,7 +8,7 @@ import (
 
 	client "github.com/antgobar/kvstore/pkg/httpclient"
 	server "github.com/antgobar/kvstore/pkg/httpserver"
-	store "github.com/antgobar/kvstore/pkg/mapstore"
+	store "github.com/antgobar/kvstore/pkg/stores/mapstore"
 )
 
 const httpTestServerAddr = "http://localhost:8090"

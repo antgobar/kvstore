@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/antgobar/kvstore/pkg/grpcserver"
-	"github.com/antgobar/kvstore/pkg/mapstore"
+	"github.com/antgobar/kvstore/pkg/stores/mapstore"
 )
 
 func main() {

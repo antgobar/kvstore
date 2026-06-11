@@ -8,7 +8,7 @@ import (
 
 	client "github.com/antgobar/kvstore/pkg/grpcclient"
 	server "github.com/antgobar/kvstore/pkg/grpcserver"
-	store "github.com/antgobar/kvstore/pkg/mapstore"
+	store "github.com/antgobar/kvstore/pkg/stores/mapstore"
 )
 
 const grpcTestServerAddr = "localhost:50051"
