@@ -11,7 +11,7 @@ A Go **library** that provides composable, pluggable building blocks for distrib
 - **Composable** — single node, sharded, multi-node cluster are different compositions of the same parts
 - **Batteries included** — reference implementations for all common cases
 - **Incremental** — simple single-node works first, complexity layered on top
-- **No lock-in** — a Redis-backed storage only needs `Get`, `Put`, `Delete` (and `Scan` where needed)
+- **No lock-in** — a Redis-backed storage only needs `Get`, `Set`, `Delete` (and `Scan` where needed)
 - **Learning-oriented** — where external libraries exist (bbolt, hashicorp/raft), the library also provides a from-scratch implementation
 - **Data/control plane separation** — user KV data and cluster metadata are stored and managed independently
 
@@ -82,7 +82,7 @@ type Entry struct {
 }
 ```
 
-`ExpiresAt` is checked on every `Get` — expired entries return `ErrKeyNotFound`. A background sweeper per shard handles proactive cleanup. `TTLStorage.PutWithTTL` is a convenience wrapper that converts `time.Duration` to `Entry.ExpiresAt`.
+`ExpiresAt` is checked on every `Get` — expired entries return `ErrKeyNotFound`. A background sweeper per shard handles proactive cleanup. `TTLStorage.SetWithTTL` is a convenience wrapper that converts `time.Duration` to `Entry.ExpiresAt`.
 
 ---
 
@@ -113,7 +113,7 @@ kvstore/
 ```go
 type Storage interface {
     Get(ctx context.Context, key string) ([]byte, error)
-    Put(ctx context.Context, key string, value []byte) error
+    Set(ctx context.Context, key string, value []byte) error
     Delete(ctx context.Context, key string) error
 }
 
@@ -126,7 +126,7 @@ type ScanStorage interface {
 // Optional — backends that support TTL natively
 type TTLStorage interface {
     Storage
-    PutWithTTL(ctx context.Context, key string, value []byte, ttl time.Duration) error
+    SetWithTTL(ctx context.Context, key string, value []byte, ttl time.Duration) error
 }
 
 // Optional — backends that support atomic operations (implementations in Phase 7)
@@ -145,7 +145,7 @@ Operational metadata — not sharded, not redistributed.
 ```go
 type MetaStore interface {
     Get(ctx context.Context, key string) ([]byte, error)
-    Put(ctx context.Context, key string, value []byte) error
+    Set(ctx context.Context, key string, value []byte) error
     Delete(ctx context.Context, key string) error
     Scan(ctx context.Context, prefix string, fn func(key string, value []byte) error) error
 }
@@ -175,7 +175,7 @@ type TransportServer interface {
 
 type TransportClient interface {
     Get(ctx context.Context, addr, key string) ([]byte, error)
-    Put(ctx context.Context, addr, key string, value []byte) error
+    Set(ctx context.Context, addr, key string, value []byte) error
     Delete(ctx context.Context, addr, key string) error
 }
 ```
@@ -204,7 +204,7 @@ type Replicator interface {
 }
 
 type Operation struct {
-    Type    OpType // OpPut, OpDelete
+    Type    OpType // OpSet, OpDelete
     Key     string
     Value   []byte
     Version uint64 // from Entry.Version; used for LWW conflict resolution
@@ -256,7 +256,7 @@ Auth runs before routing and replication — gRPC interceptors and HTTP middlewa
 
 ### Client
 
-`Client` — `Get / Put / Delete` facade. Hides routing from application code. Uses `Router` + `NodePool` in smart client mode; relies on forwarding in dumb-LB mode.
+`Client` — `Get / Set / Delete` facade. Hides routing from application code. Uses `Router` + `NodePool` in smart client mode; relies on forwarding in dumb-LB mode.
 
 ---
 
@@ -347,7 +347,7 @@ In-process burst capacity (autoscaling responds in minutes — wrong tool for sp
 
 | Operation | Scope | Phase |
 | --------- | ----- | ----- |
-| `Put / Get / Delete` | single key | 1 |
+| `Set / Get / Delete` | single key | 1 |
 | `CAS` (via `CASStorage`) | single key, optimistic | 7 |
 | `Batch` | multi-key atomic, single node | post-MVP |
 | Distributed transaction | cross-node | out of scope |
@@ -379,7 +379,7 @@ Every component exposes `State()` returning a structured snapshot (node status, 
 // ClientFacing + Gateway roles
 service KVService {
     rpc Get(GetRequest) returns (GetResponse);
-    rpc Put(PutRequest) returns (PutResponse);
+    rpc Set(SetRequest) returns (SetResponse);
     rpc Delete(DeleteRequest) returns (DeleteResponse);
     rpc Scan(ScanRequest) returns (stream ScanResponse);
 }

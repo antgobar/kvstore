@@ -29,10 +29,10 @@ func Run(client Client) {
 		err := client.Set(ctx, args.Key, []byte(args.Value))
 		defer client.Close()
 		if err != nil {
-			log.Fatalf("error putting key %s, value %s, error: %v",
+			log.Fatalf("error setting key %s, value %s, error: %v",
 				args.Key, args.Value, err)
 		}
-		fmt.Printf("successful put: %s - %s\n", args.Key, args.Value)
+		fmt.Printf("successful set: %s - %s\n", args.Key, args.Value)
 
 	case "get":
 		value, err := client.Get(ctx, args.Key)
@@ -72,9 +72,9 @@ func extractInputArgs() InputArgs {
 		if input.Key == "" || input.Value != "" {
 			log.Fatal("Get action requires a key and no value!")
 		}
-	case "put":
+	case "set":
 		if input.Key == "" || input.Value == "" {
-			log.Fatal("Put action requires both key and value!")
+			log.Fatal("Set action requires both key and value!")
 		}
 	case "delete":
 		if input.Key == "" || input.Value != "" {
