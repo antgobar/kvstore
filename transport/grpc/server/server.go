@@ -15,20 +15,14 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type Storer interface {
-	Set(ctx context.Context, key string, value []byte) error
-	Get(ctx context.Context, key string) ([]byte, error)
-	Delete(ctx context.Context, key string) error
-}
-
 type GrpcServer struct {
-	Store   Storer
+	Store   core.Store
 	Addr    string
 	Timeout time.Duration
 	server  *grpc.Server
 }
 
-func NewGrpcServer(addr string, store Storer, timeout time.Duration) *GrpcServer {
+func NewGrpcServer(addr string, store core.Store, timeout time.Duration) *GrpcServer {
 	return &GrpcServer{
 		Store:   store,
 		Addr:    addr,
