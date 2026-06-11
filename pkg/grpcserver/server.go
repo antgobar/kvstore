@@ -69,11 +69,10 @@ func (s *GrpcServer) Run() {
 }
 
 func (s *GrpcServer) Stop() {
-	s.server.Stop()
+	s.server.GracefulStop()
 	log.Println("GRPC server stopped")
 }
 
-// toGrpcError maps domain errors to gRPC status errors.
 func toGrpcError(err error) error {
 	if errors.Is(err, custom_errors.ErrKeyNotFound) {
 		return status.Error(codes.NotFound, err.Error())
@@ -81,8 +80,6 @@ func toGrpcError(err error) error {
 	return status.Error(codes.Internal, err.Error())
 }
 
-// grpcAdapter translates between the proto-generated interface and GrpcServer.
-// This keeps proto concerns out of GrpcServer itself.
 type grpcAdapter struct {
 	pb.UnimplementedKvStoreServer
 	srv *GrpcServer
