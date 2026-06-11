@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	store "github.com/antgobar/kvstore/stores/mapstore"
+	store "github.com/antgobar/kvstore/stores/memory"
 	client "github.com/antgobar/kvstore/transport/http/client"
 	server "github.com/antgobar/kvstore/transport/http/server"
 )
@@ -14,7 +14,7 @@ import (
 const httpTestServerAddr = "http://localhost:8090"
 const httpClientRequestAddr = "localhost:8090"
 
-func TestHttpMapEndToEndPutKeyGettable(t *testing.T) {
+func TestHttpMapEndToEndSetKeyGettable(t *testing.T) {
 	httpClient := client.New(httpTestServerAddr, time.Second*5)
 	mapStore := store.New()
 	httpServer := server.New(httpClientRequestAddr, mapStore, time.Second*5)
@@ -25,8 +25,8 @@ func TestHttpMapEndToEndPutKeyGettable(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	ctx := context.TODO()
-	if err := httpClient.Put(ctx, "foo", []byte("bar")); err != nil {
-		t.Fatalf("Put failed: %v", err)
+	if err := httpClient.Set(ctx, "foo", []byte("bar")); err != nil {
+		t.Fatalf("Set failed: %v", err)
 	}
 
 	want := []byte("bar")
@@ -39,7 +39,7 @@ func TestHttpMapEndToEndPutKeyGettable(t *testing.T) {
 	}
 }
 
-func TestHttpMapEndToEndPutKeyUpdatedRetrievable(t *testing.T) {
+func TestHttpMapEndToEndSetKeyUpdatedRetrievable(t *testing.T) {
 	httpClient := client.New(httpTestServerAddr, time.Second*5)
 	mapStore := store.New()
 	httpServer := server.New(httpClientRequestAddr, mapStore, time.Second*5)
@@ -50,11 +50,11 @@ func TestHttpMapEndToEndPutKeyUpdatedRetrievable(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	ctx := context.TODO()
-	if err := httpClient.Put(ctx, "foo", []byte("bar")); err != nil {
-		t.Fatalf("Put failed: %v", err)
+	if err := httpClient.Set(ctx, "foo", []byte("bar")); err != nil {
+		t.Fatalf("Set failed: %v", err)
 	}
-	if err := httpClient.Put(ctx, "foo", []byte("baz")); err != nil {
-		t.Fatalf("Put failed: %v", err)
+	if err := httpClient.Set(ctx, "foo", []byte("baz")); err != nil {
+		t.Fatalf("Set failed: %v", err)
 	}
 
 	want := []byte("baz")

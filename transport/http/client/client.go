@@ -65,12 +65,12 @@ func post[Request any, Response any](ctx context.Context, c *HttpClient, endpoin
 	return &result, nil
 }
 
-func (c *HttpClient) Put(ctx context.Context, key string, value []byte) error {
-	put := payload.KeyValuePayload{
+func (c *HttpClient) Set(ctx context.Context, key string, value []byte) error {
+	set := payload.KeyValuePayload{
 		Key:   key,
 		Value: value,
 	}
-	_, err := post[payload.KeyValuePayload, any](ctx, c, "/put", put)
+	_, err := post[payload.KeyValuePayload, any](ctx, c, "/set", set)
 	return err
 }
 

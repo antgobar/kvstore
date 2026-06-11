@@ -3,14 +3,14 @@ package main
 import (
 	"time"
 
-	"github.com/antgobar/kvstore/stores/mapstore"
+	store "github.com/antgobar/kvstore/stores/memory"
 	"github.com/antgobar/kvstore/transport/http/server"
 )
 
 func main() {
 	const addr = "localhost:8080"
 	const requestTimeout = time.Second * 10
-	s := mapstore.New()
+	s := store.New()
 	httpServer := server.New(addr, s, requestTimeout)
 	httpServer.Run()
 }

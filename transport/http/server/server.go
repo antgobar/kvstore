@@ -12,20 +12,14 @@ import (
 	"github.com/antgobar/kvstore/transport/http/payload"
 )
 
-type Storer interface {
-	Put(ctx context.Context, key string, value []byte) error
-	Get(ctx context.Context, key string) ([]byte, error)
-	Delete(ctx context.Context, key string) error
-}
-
 type HttpServer struct {
 	Addr           string
-	Store          Storer
+	Store          core.Store
 	RequestTimeout time.Duration
 	server         *http.Server
 }
 
-func New(addr string, store Storer, requestTimeout time.Duration) *HttpServer {
+func New(addr string, store core.Store, requestTimeout time.Duration) *HttpServer {
 	return &HttpServer{
 		Addr:           addr,
 		Store:          store,
@@ -40,7 +34,7 @@ func (s *HttpServer) Run() {
 		Handler: mux,
 	}
 
-	mux.HandleFunc("POST /put", s.handlePut)
+	mux.HandleFunc("POST /set", s.handleSet)
 	mux.HandleFunc("POST /get", s.handleGet)
 	mux.HandleFunc("POST /delete", s.handleDelete)
 
@@ -61,7 +55,7 @@ func (s *HttpServer) Stop() {
 	}
 }
 
-func (s *HttpServer) handlePut(w http.ResponseWriter, r *http.Request) {
+func (s *HttpServer) handleSet(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 
 	var keyVal payload.KeyValuePayload
@@ -72,7 +66,7 @@ func (s *HttpServer) handlePut(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), s.RequestTimeout)
 	defer cancel()
-	if err := s.Store.Put(ctx, keyVal.Key, keyVal.Value); err != nil {
+	if err := s.Store.Set(ctx, keyVal.Key, keyVal.Value); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

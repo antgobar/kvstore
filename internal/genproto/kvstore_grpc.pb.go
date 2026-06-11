@@ -19,7 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	KvStore_Put_FullMethodName    = "/model.KvStore/Put"
+	KvStore_Set_FullMethodName    = "/model.KvStore/Set"
 	KvStore_Get_FullMethodName    = "/model.KvStore/Get"
 	KvStore_Delete_FullMethodName = "/model.KvStore/Delete"
 )
@@ -28,7 +28,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type KvStoreClient interface {
-	Put(ctx context.Context, in *PutRequest, opts ...grpc.CallOption) (*PutResponse, error)
+	Set(ctx context.Context, in *SetRequest, opts ...grpc.CallOption) (*SetResponse, error)
 	Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error)
 	Delete(ctx context.Context, in *DeleteRequest, opts ...grpc.CallOption) (*DeleteResponse, error)
 }
@@ -41,10 +41,10 @@ func NewKvStoreClient(cc grpc.ClientConnInterface) KvStoreClient {
 	return &kvStoreClient{cc}
 }
 
-func (c *kvStoreClient) Put(ctx context.Context, in *PutRequest, opts ...grpc.CallOption) (*PutResponse, error) {
+func (c *kvStoreClient) Set(ctx context.Context, in *SetRequest, opts ...grpc.CallOption) (*SetResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(PutResponse)
-	err := c.cc.Invoke(ctx, KvStore_Put_FullMethodName, in, out, cOpts...)
+	out := new(SetResponse)
+	err := c.cc.Invoke(ctx, KvStore_Set_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +75,7 @@ func (c *kvStoreClient) Delete(ctx context.Context, in *DeleteRequest, opts ...g
 // All implementations must embed UnimplementedKvStoreServer
 // for forward compatibility.
 type KvStoreServer interface {
-	Put(context.Context, *PutRequest) (*PutResponse, error)
+	Set(context.Context, *SetRequest) (*SetResponse, error)
 	Get(context.Context, *GetRequest) (*GetResponse, error)
 	Delete(context.Context, *DeleteRequest) (*DeleteResponse, error)
 	mustEmbedUnimplementedKvStoreServer()
@@ -88,8 +88,8 @@ type KvStoreServer interface {
 // pointer dereference when methods are called.
 type UnimplementedKvStoreServer struct{}
 
-func (UnimplementedKvStoreServer) Put(context.Context, *PutRequest) (*PutResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Put not implemented")
+func (UnimplementedKvStoreServer) Set(context.Context, *SetRequest) (*SetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Set not implemented")
 }
 func (UnimplementedKvStoreServer) Get(context.Context, *GetRequest) (*GetResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Get not implemented")
@@ -118,20 +118,20 @@ func RegisterKvStoreServer(s grpc.ServiceRegistrar, srv KvStoreServer) {
 	s.RegisterService(&KvStore_ServiceDesc, srv)
 }
 
-func _KvStore_Put_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(PutRequest)
+func _KvStore_Set_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(KvStoreServer).Put(ctx, in)
+		return srv.(KvStoreServer).Set(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: KvStore_Put_FullMethodName,
+		FullMethod: KvStore_Set_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(KvStoreServer).Put(ctx, req.(*PutRequest))
+		return srv.(KvStoreServer).Set(ctx, req.(*SetRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -180,8 +180,8 @@ var KvStore_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*KvStoreServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "Put",
-			Handler:    _KvStore_Put_Handler,
+			MethodName: "Set",
+			Handler:    _KvStore_Set_Handler,
 		},
 		{
 			MethodName: "Get",

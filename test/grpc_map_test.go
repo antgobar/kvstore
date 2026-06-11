@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	store "github.com/antgobar/kvstore/stores/mapstore"
+	store "github.com/antgobar/kvstore/stores/memory"
 	client "github.com/antgobar/kvstore/transport/grpc/client"
 	server "github.com/antgobar/kvstore/transport/grpc/server"
 )
@@ -14,7 +14,7 @@ import (
 const grpcTestServerAddr = "localhost:50051"
 const grpcClientRequestAddr = "localhost:50051"
 
-func TestGrpcMapEndToEndPutKeyGettable(t *testing.T) {
+func TestGrpcMapEndToEndSetKeyGettable(t *testing.T) {
 	grpcClient := client.New(grpcTestServerAddr, time.Second*5)
 	mapStore := store.New()
 	grpcServer := server.NewGrpcServer(grpcClientRequestAddr, mapStore, time.Second*5)
@@ -25,8 +25,8 @@ func TestGrpcMapEndToEndPutKeyGettable(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	ctx := context.TODO()
-	if err := grpcClient.Put(ctx, "foo", []byte("bar")); err != nil {
-		t.Fatalf("Put failed: %v", err)
+	if err := grpcClient.Set(ctx, "foo", []byte("bar")); err != nil {
+		t.Fatalf("Set failed: %v", err)
 	}
 
 	want := []byte("bar")
@@ -39,7 +39,7 @@ func TestGrpcMapEndToEndPutKeyGettable(t *testing.T) {
 	}
 }
 
-func TestGrpcMapEndToEndPutKeyUpdatedRetrievable(t *testing.T) {
+func TestGrpcMapEndToEndSetKeyUpdatedRetrievable(t *testing.T) {
 	grpcClient := client.New(grpcTestServerAddr, time.Second*5)
 	mapStore := store.New()
 	grpcServer := server.NewGrpcServer(grpcClientRequestAddr, mapStore, time.Second*5)
@@ -50,11 +50,11 @@ func TestGrpcMapEndToEndPutKeyUpdatedRetrievable(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	ctx := context.TODO()
-	if err := grpcClient.Put(ctx, "foo", []byte("bar")); err != nil {
-		t.Fatalf("Put failed: %v", err)
+	if err := grpcClient.Set(ctx, "foo", []byte("bar")); err != nil {
+		t.Fatalf("Set failed: %v", err)
 	}
-	if err := grpcClient.Put(ctx, "foo", []byte("baz")); err != nil {
-		t.Fatalf("Put failed: %v", err)
+	if err := grpcClient.Set(ctx, "foo", []byte("baz")); err != nil {
+		t.Fatalf("Set failed: %v", err)
 	}
 
 	want := []byte("baz")

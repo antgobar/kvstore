@@ -8,7 +8,7 @@ import (
 )
 
 type Client interface {
-	Put(ctx context.Context, key string, value []byte) error
+	Set(ctx context.Context, key string, value []byte) error
 	Get(ctx context.Context, key string) ([]byte, error)
 	Delete(ctx context.Context, key string) error
 	Close() error
@@ -25,8 +25,8 @@ func Run(client Client) {
 	ctx := context.TODO()
 
 	switch args.Action {
-	case "put":
-		err := client.Put(ctx, args.Key, []byte(args.Value))
+	case "set":
+		err := client.Set(ctx, args.Key, []byte(args.Value))
 		defer client.Close()
 		if err != nil {
 			log.Fatalf("error putting key %s, value %s, error: %v",

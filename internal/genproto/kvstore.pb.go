@@ -21,7 +21,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type PutRequest struct {
+type SetRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
 	Value         []byte                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
@@ -29,20 +29,20 @@ type PutRequest struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *PutRequest) Reset() {
-	*x = PutRequest{}
+func (x *SetRequest) Reset() {
+	*x = SetRequest{}
 	mi := &file_kvstore_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *PutRequest) String() string {
+func (x *SetRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*PutRequest) ProtoMessage() {}
+func (*SetRequest) ProtoMessage() {}
 
-func (x *PutRequest) ProtoReflect() protoreflect.Message {
+func (x *SetRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_kvstore_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -54,45 +54,45 @@ func (x *PutRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use PutRequest.ProtoReflect.Descriptor instead.
-func (*PutRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use SetRequest.ProtoReflect.Descriptor instead.
+func (*SetRequest) Descriptor() ([]byte, []int) {
 	return file_kvstore_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *PutRequest) GetKey() string {
+func (x *SetRequest) GetKey() string {
 	if x != nil {
 		return x.Key
 	}
 	return ""
 }
 
-func (x *PutRequest) GetValue() []byte {
+func (x *SetRequest) GetValue() []byte {
 	if x != nil {
 		return x.Value
 	}
 	return nil
 }
 
-type PutResponse struct {
+type SetResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *PutResponse) Reset() {
-	*x = PutResponse{}
+func (x *SetResponse) Reset() {
+	*x = SetResponse{}
 	mi := &file_kvstore_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *PutResponse) String() string {
+func (x *SetResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*PutResponse) ProtoMessage() {}
+func (*SetResponse) ProtoMessage() {}
 
-func (x *PutResponse) ProtoReflect() protoreflect.Message {
+func (x *SetResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_kvstore_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -104,8 +104,8 @@ func (x *PutResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use PutResponse.ProtoReflect.Descriptor instead.
-func (*PutResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use SetResponse.ProtoReflect.Descriptor instead.
+func (*SetResponse) Descriptor() ([]byte, []int) {
 	return file_kvstore_proto_rawDescGZIP(), []int{1}
 }
 
@@ -283,10 +283,10 @@ const file_kvstore_proto_rawDesc = "" +
 	"\n" +
 	"\rkvstore.proto\x12\x05model\"4\n" +
 	"\n" +
-	"PutRequest\x12\x10\n" +
+	"SetRequest\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\fR\x05value\"\r\n" +
-	"\vPutResponse\"\x1e\n" +
+	"\vSetResponse\"\x1e\n" +
 	"\n" +
 	"GetRequest\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\"#\n" +
@@ -296,7 +296,7 @@ const file_kvstore_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\"\x10\n" +
 	"\x0eDeleteResponse2\x9c\x01\n" +
 	"\aKvStore\x12,\n" +
-	"\x03Put\x12\x11.model.PutRequest\x1a\x12.model.PutResponse\x12,\n" +
+	"\x03Set\x12\x11.model.SetRequest\x1a\x12.model.SetResponse\x12,\n" +
 	"\x03Get\x12\x11.model.GetRequest\x1a\x12.model.GetResponse\x125\n" +
 	"\x06Delete\x12\x14.model.DeleteRequest\x1a\x15.model.DeleteResponseB\x13Z\x11internal/genprotob\x06proto3"
 
@@ -314,18 +314,18 @@ func file_kvstore_proto_rawDescGZIP() []byte {
 
 var file_kvstore_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_kvstore_proto_goTypes = []any{
-	(*PutRequest)(nil),     // 0: model.PutRequest
-	(*PutResponse)(nil),    // 1: model.PutResponse
+	(*SetRequest)(nil),     // 0: model.SetRequest
+	(*SetResponse)(nil),    // 1: model.SetResponse
 	(*GetRequest)(nil),     // 2: model.GetRequest
 	(*GetResponse)(nil),    // 3: model.GetResponse
 	(*DeleteRequest)(nil),  // 4: model.DeleteRequest
 	(*DeleteResponse)(nil), // 5: model.DeleteResponse
 }
 var file_kvstore_proto_depIdxs = []int32{
-	0, // 0: model.KvStore.Put:input_type -> model.PutRequest
+	0, // 0: model.KvStore.Set:input_type -> model.SetRequest
 	2, // 1: model.KvStore.Get:input_type -> model.GetRequest
 	4, // 2: model.KvStore.Delete:input_type -> model.DeleteRequest
-	1, // 3: model.KvStore.Put:output_type -> model.PutResponse
+	1, // 3: model.KvStore.Set:output_type -> model.SetResponse
 	3, // 4: model.KvStore.Get:output_type -> model.GetResponse
 	5, // 5: model.KvStore.Delete:output_type -> model.DeleteResponse
 	3, // [3:6] is the sub-list for method output_type

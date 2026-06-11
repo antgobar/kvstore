@@ -32,10 +32,10 @@ func New(addr string, timeout time.Duration) *GrpcClient {
 	return &GrpcClient{client, conn, timeout}
 }
 
-func (s *GrpcClient) Put(ctx context.Context, key string, value []byte) error {
+func (s *GrpcClient) Set(ctx context.Context, key string, value []byte) error {
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
-	_, err := s.client.Put(ctx, &pb.PutRequest{
+	_, err := s.client.Set(ctx, &pb.SetRequest{
 		Key:   key,
 		Value: value,
 	})

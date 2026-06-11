@@ -16,7 +16,7 @@ import (
 )
 
 type Storer interface {
-	Put(ctx context.Context, key string, value []byte) error
+	Set(ctx context.Context, key string, value []byte) error
 	Get(ctx context.Context, key string) ([]byte, error)
 	Delete(ctx context.Context, key string) error
 }
@@ -37,10 +37,10 @@ func NewGrpcServer(addr string, store Storer, timeout time.Duration) *GrpcServer
 	}
 }
 
-func (s *GrpcServer) Put(ctx context.Context, key string, value []byte) error {
+func (s *GrpcServer) Set(ctx context.Context, key string, value []byte) error {
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
-	return s.Store.Put(ctx, key, value)
+	return s.Store.Set(ctx, key, value)
 }
 
 func (s *GrpcServer) Get(ctx context.Context, key string) ([]byte, error) {
@@ -85,11 +85,11 @@ type grpcAdapter struct {
 	srv *GrpcServer
 }
 
-func (a *grpcAdapter) Put(ctx context.Context, req *pb.PutRequest) (*pb.PutResponse, error) {
-	if err := a.srv.Put(ctx, req.Key, req.Value); err != nil {
-		return &pb.PutResponse{}, toGrpcError(err)
+func (a *grpcAdapter) Set(ctx context.Context, req *pb.SetRequest) (*pb.SetResponse, error) {
+	if err := a.srv.Set(ctx, req.Key, req.Value); err != nil {
+		return &pb.SetResponse{}, toGrpcError(err)
 	}
-	return &pb.PutResponse{}, nil
+	return &pb.SetResponse{}, nil
 }
 
 func (a *grpcAdapter) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {

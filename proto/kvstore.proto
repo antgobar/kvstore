@@ -5,17 +5,17 @@ option go_package = "internal/genproto";
 
 
 service KvStore {
-  rpc Put (PutRequest) returns (PutResponse);
+  rpc Set (SetRequest) returns (SetResponse);
   rpc Get (GetRequest) returns (GetResponse);
   rpc Delete(DeleteRequest) returns (DeleteResponse);
 }
 
-message PutRequest {
+message SetRequest {
   string key = 1;
   bytes value = 2;
 }
 
-message PutResponse {}
+message SetResponse {}
 
 message GetRequest {
   string key = 1;
