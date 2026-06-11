@@ -1,4 +1,4 @@
-package httpclient
+package client
 
 import (
 	"bytes"
@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/antgobar/kvstore/pkg/transport"
+	"github.com/antgobar/kvstore/pkg/transport/http/payload"
 )
 
 type HttpClient struct {
@@ -66,19 +66,19 @@ func post[Request any, Response any](ctx context.Context, c *HttpClient, endpoin
 }
 
 func (c *HttpClient) Put(ctx context.Context, key string, value []byte) error {
-	put := transport.KeyValuePayload{
+	put := payload.KeyValuePayload{
 		Key:   key,
 		Value: value,
 	}
-	_, err := post[transport.KeyValuePayload, any](ctx, c, "/put", put)
+	_, err := post[payload.KeyValuePayload, any](ctx, c, "/put", put)
 	return err
 }
 
 func (c *HttpClient) Get(ctx context.Context, key string) ([]byte, error) {
-	get := transport.KeyPayload{
+	get := payload.KeyPayload{
 		Key: key,
 	}
-	response, err := post[transport.KeyPayload, transport.ValuePayload](ctx, c, "/get", get)
+	response, err := post[payload.KeyPayload, payload.ValuePayload](ctx, c, "/get", get)
 	if err != nil {
 		return nil, err
 	}
@@ -86,10 +86,10 @@ func (c *HttpClient) Get(ctx context.Context, key string) ([]byte, error) {
 }
 
 func (c *HttpClient) Delete(ctx context.Context, key string) error {
-	delete := transport.KeyPayload{
+	delete := payload.KeyPayload{
 		Key: key,
 	}
-	_, err := post[transport.KeyPayload, any](ctx, c, "/delete", delete)
+	_, err := post[payload.KeyPayload, any](ctx, c, "/delete", delete)
 	if err != nil {
 		return err
 	}

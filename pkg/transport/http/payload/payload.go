@@ -1,4 +1,4 @@
-package transport
+package payload
 
 type KeyValuePayload struct {
 	Key   string `json:"key"`

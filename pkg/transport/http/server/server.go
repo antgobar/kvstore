@@ -1,4 +1,4 @@
-package httpserver
+package server
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"time"
 
 	custom_errors "github.com/antgobar/kvstore/pkg/errors"
-	"github.com/antgobar/kvstore/pkg/transport"
+	"github.com/antgobar/kvstore/pkg/transport/http/payload"
 )
 
 type Storer interface {
@@ -64,7 +64,7 @@ func (s *HttpServer) Stop() {
 func (s *HttpServer) handlePut(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 
-	var keyVal transport.KeyValuePayload
+	var keyVal payload.KeyValuePayload
 
 	if err := decoder.Decode(&keyVal); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -83,7 +83,7 @@ func (s *HttpServer) handlePut(w http.ResponseWriter, r *http.Request) {
 func (s *HttpServer) handleGet(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 
-	var k transport.KeyPayload
+	var k payload.KeyPayload
 
 	if err := decoder.Decode(&k); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -105,7 +105,7 @@ func (s *HttpServer) handleGet(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
-	resp := transport.ValuePayload{Value: value}
+	resp := payload.ValuePayload{Value: value}
 	if err = json.NewEncoder(w).Encode(resp); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -115,7 +115,7 @@ func (s *HttpServer) handleGet(w http.ResponseWriter, r *http.Request) {
 func (s *HttpServer) handleDelete(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 
-	var k transport.KeyPayload
+	var k payload.KeyPayload
 
 	if err := decoder.Decode(&k); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

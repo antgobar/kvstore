@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	client "github.com/antgobar/kvstore/pkg/grpcclient"
-	server "github.com/antgobar/kvstore/pkg/grpcserver"
 	store "github.com/antgobar/kvstore/pkg/stores/mapstore"
+	client "github.com/antgobar/kvstore/pkg/transport/grpc/client"
+	server "github.com/antgobar/kvstore/pkg/transport/grpc/server"
 )
 
 const grpcTestServerAddr = "localhost:50051"
