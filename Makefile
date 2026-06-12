@@ -1,7 +1,7 @@
 .PHONY: test format build-http-map-example build-run-http-map-example build-run gen-proto
 
 test:
-	@go test ./test
+	@go test ./...
 
 format:
 	@go fmt ./...
