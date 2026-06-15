@@ -3,6 +3,7 @@ module github.com/antgobar/kvstore
 go 1.26.2
 
 require (
+	go.etcd.io/bbolt v1.4.3
 	google.golang.org/grpc v1.81.1
 	google.golang.org/protobuf v1.36.11
 )
