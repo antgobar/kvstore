@@ -69,3 +69,24 @@ func TestMemoryStoreScanKeys(t *testing.T) {
 		t.Errorf("Expected keys incorrect: want %d, got %d", wantResultSize, gotResultSize)
 	}
 }
+
+func TestMemoryStoreDeleteEmptyKeyReturnsErrNotFound(t *testing.T) {
+	store := New()
+	err := store.Delete(context.TODO(), "foo")
+	if err != core.ErrKeyNotFound {
+		t.Errorf("Expected error incorrect: want %v, got %v", core.ErrKeyNotFound, err)
+	}
+}
+
+func TestMemoryStoreDeleteKeyDeletesKey(t *testing.T) {
+	store := New()
+	err := store.Set(context.TODO(), "foo", []byte("bar"))
+	if err != nil {
+		t.Fatalf("data setup failed: %v", err)
+	}
+	err = store.Delete(context.TODO(), "foo")
+	if err != nil {
+		t.Errorf("Expected error incorrect: want nil, got %v", err)
+	}
+
+}
