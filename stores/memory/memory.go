@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"maps"
 	"strings"
 	"sync"
 
@@ -62,10 +63,13 @@ func (m *MemoryStore) Scan(ctx context.Context, prefix string) (<-chan []map[str
 	go func() {
 		defer wg.Done()
 		defer close(errCh)
+		m.mu.RLock()
+		snapshot := maps.Clone(m.data)
+		m.mu.RUnlock()
 
 		buff := make([]map[string][]byte, 0)
 
-		for key, value := range m.data {
+		for key, value := range snapshot {
 			if !strings.HasPrefix(key, prefix) {
 				continue
 			}
@@ -75,9 +79,10 @@ func (m *MemoryStore) Scan(ctx context.Context, prefix string) (<-chan []map[str
 				continue
 			}
 
-			if len(buff) > 0 {
+			if len(buff) >= m.scanBatchSize {
 				select {
 				case outCh <- buff:
+					buff = make([]map[string][]byte, 0)
 				case <-ctx.Done():
 					errCh <- ctx.Err()
 				}
