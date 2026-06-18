@@ -1,7 +1,10 @@
 package blt
 
 import (
+	"bytes"
 	"context"
+	"os"
+	"sync"
 	"time"
 
 	"github.com/antgobar/kvstore/core"
@@ -10,12 +13,21 @@ import (
 
 type BltStore struct {
 	db            *bolt.DB
-	storeName     string
+	StoreName     string
 	userSpaceName string
 }
 
 func (b *BltStore) Close() error {
 	return b.db.Close()
+}
+
+func (b *BltStore) TearDown() error {
+	b.Close()
+	err := os.Remove(b.StoreName)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (b *BltStore) getUserSpaceBucket(tx *bolt.Tx) (*bolt.Bucket, error) {
@@ -43,10 +55,10 @@ func New(storeName string, userSpaceName string, timeout time.Duration) (*BltSto
 	if err != nil {
 		return nil, err
 	}
-	return &BltStore{db: db, storeName: storeName, userSpaceName: userSpaceName}, nil
+	return &BltStore{db: db, StoreName: storeName, userSpaceName: userSpaceName}, nil
 }
 
-func (b *BltStore) Put(ctx context.Context, key string, value []byte) error {
+func (b *BltStore) Set(ctx context.Context, key string, value []byte) error {
 	err := b.db.Update(func(tx *bolt.Tx) error {
 		bucket, err := b.getUserSpaceBucket(tx)
 		if err != nil {
@@ -84,4 +96,44 @@ func (b *BltStore) Delete(ctx context.Context, key string) error {
 		return bucket.Delete([]byte(key))
 	})
 	return err
+}
+
+func (b *BltStore) Scan(ctx context.Context, prefix string) (<-chan []map[string][]byte, <-chan error) {
+	outCh := make(chan []map[string][]byte)
+	errCh := make(chan error, 1)
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+
+	go func() {
+		err := b.db.View(func(tx *bolt.Tx) error {
+			bucket, err := b.getUserSpaceBucket(tx)
+			if err != nil {
+				return err
+			}
+			pfx := []byte(prefix)
+			cursor := bucket.Cursor()
+			for k, v := cursor.Seek(pfx); k != nil && bytes.HasPrefix(k, pfx); k, v = cursor.Next() {
+				data := []map[string][]byte{{string(k): v}}
+				select {
+				case outCh <- data:
+				case <-ctx.Done():
+					errCh <- ctx.Err()
+				}
+			}
+			return nil
+		})
+		select {
+		case errCh <- err:
+		case <-ctx.Done():
+			errCh <- ctx.Err()
+		}
+	}()
+
+	go func() {
+		wg.Wait()
+		close(outCh)
+	}()
+
+	return outCh, errCh
 }

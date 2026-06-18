@@ -43,11 +43,6 @@ func (m *MemoryStore) Get(_ context.Context, key string) ([]byte, error) {
 func (m *MemoryStore) Delete(_ context.Context, key string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
-	if _, ok := m.data[key]; !ok {
-		return core.ErrKeyNotFound
-	}
-
 	delete(m.data, key)
 	return nil
 }

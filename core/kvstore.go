@@ -24,7 +24,7 @@ type Store interface {
 }
 
 type Scanner interface {
-	Scan(ctx context.Context, prefix string) (<-chan []Entry, <-chan error)
+	Scan(ctx context.Context, prefix string) (<-chan []map[string][]byte, <-chan error)
 }
 
 type ScanStore interface {

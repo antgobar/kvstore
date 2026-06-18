@@ -61,7 +61,6 @@ func TestMemoryStoreScanKeys(t *testing.T) {
 
 	if !reflect.DeepEqual(want, got) {
 		t.Errorf("Incorrect results: want %s, got %s", want, got)
-
 	}
 
 	wantResultSize := 2
@@ -73,8 +72,8 @@ func TestMemoryStoreScanKeys(t *testing.T) {
 func TestMemoryStoreDeleteEmptyKeyReturnsErrNotFound(t *testing.T) {
 	store := New()
 	err := store.Delete(context.TODO(), "foo")
-	if err != core.ErrKeyNotFound {
-		t.Errorf("Expected error incorrect: want %v, got %v", core.ErrKeyNotFound, err)
+	if err != nil {
+		t.Errorf("Expected no error: got %v", err)
 	}
 }
 
