@@ -13,8 +13,12 @@ import (
 
 type BltStore struct {
 	db            *bolt.DB
-	StoreName     string
+	storeName     string
 	userSpaceName string
+}
+
+func (b *BltStore) Name() string {
+	return b.storeName
 }
 
 func (b *BltStore) Close() error {
@@ -23,7 +27,7 @@ func (b *BltStore) Close() error {
 
 func (b *BltStore) TearDown() error {
 	b.Close()
-	err := os.Remove(b.StoreName)
+	err := os.Remove(b.storeName)
 	if err != nil {
 		return err
 	}
@@ -55,7 +59,7 @@ func New(storeName string, userSpaceName string, timeout time.Duration) (*BltSto
 	if err != nil {
 		return nil, err
 	}
-	return &BltStore{db: db, StoreName: storeName, userSpaceName: userSpaceName}, nil
+	return &BltStore{db: db, storeName: storeName, userSpaceName: userSpaceName}, nil
 }
 
 func (b *BltStore) Set(ctx context.Context, key string, value []byte) error {

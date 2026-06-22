@@ -9,16 +9,16 @@ import (
 	"github.com/antgobar/kvstore/core"
 )
 
+const maxPageSize = 50
+
 type MemoryStore struct {
-	data          map[string][]byte
-	mu            sync.RWMutex
-	scanBatchSize int
+	data map[string][]byte
+	mu   sync.RWMutex
 }
 
 func New() *MemoryStore {
 	return &MemoryStore{
-		data:          make(map[string][]byte),
-		scanBatchSize: 1,
+		data: make(map[string][]byte),
 	}
 }
 
@@ -47,51 +47,61 @@ func (m *MemoryStore) Delete(_ context.Context, key string) error {
 	return nil
 }
 
+func freshPage() []map[string][]byte {
+	return make([]map[string][]byte, 0)
+}
+
 func (m *MemoryStore) Scan(ctx context.Context, prefix string) (<-chan []map[string][]byte, <-chan error) {
 	outCh := make(chan []map[string][]byte)
 	errCh := make(chan error, 1)
 
+	m.mu.RLock()
+	snapshot := maps.Clone(m.data)
+	m.mu.RUnlock()
+
 	var wg sync.WaitGroup
 
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		defer close(errCh)
-		m.mu.RLock()
-		snapshot := maps.Clone(m.data)
-		m.mu.RUnlock()
-
-		buff := make([]map[string][]byte, 0)
-
+		page := freshPage()
 		for key, value := range snapshot {
 			if !strings.HasPrefix(key, prefix) {
 				continue
 			}
-			buff = append(buff, map[string][]byte{key: value})
 
-			if len(buff) < m.scanBatchSize {
+			if len(page) >= maxPageSize {
+				select {
+				case outCh <- page:
+					page = freshPage()
+				case <-ctx.Done():
+					errCh <- ctx.Err()
+				}
+			}
+
+			page = append(page, map[string][]byte{key: value})
+
+			if len(page) < maxPageSize {
 				continue
 			}
 
-			if len(buff) >= m.scanBatchSize {
+			if len(page) >= maxPageSize {
 				select {
-				case outCh <- buff:
-					buff = make([]map[string][]byte, 0)
+				case outCh <- page:
+					page = make([]map[string][]byte, 0)
 				case <-ctx.Done():
 					errCh <- ctx.Err()
 				}
 			}
 
 		}
-		if len(buff) > 0 {
+		if len(page) > 0 {
 			select {
-			case outCh <- buff:
+			case outCh <- page:
 			case <-ctx.Done():
 				errCh <- ctx.Err()
 			}
 		}
-	}()
+	})
 
 	go func() {
 		wg.Wait()
