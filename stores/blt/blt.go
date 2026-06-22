@@ -110,6 +110,7 @@ func (b *BltStore) Scan(ctx context.Context, prefix string) (<-chan []map[string
 	wg.Add(1)
 
 	go func() {
+		defer wg.Done()
 		err := b.db.View(func(tx *bolt.Tx) error {
 			bucket, err := b.getUserSpaceBucket(tx)
 			if err != nil {

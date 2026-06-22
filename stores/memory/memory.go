@@ -47,10 +47,6 @@ func (m *MemoryStore) Delete(_ context.Context, key string) error {
 	return nil
 }
 
-func freshPage() []map[string][]byte {
-	return make([]map[string][]byte, 0)
-}
-
 func (m *MemoryStore) Scan(ctx context.Context, prefix string) (<-chan []map[string][]byte, <-chan error) {
 	outCh := make(chan []map[string][]byte)
 	errCh := make(chan error, 1)
@@ -59,53 +55,37 @@ func (m *MemoryStore) Scan(ctx context.Context, prefix string) (<-chan []map[str
 	snapshot := maps.Clone(m.data)
 	m.mu.RUnlock()
 
-	var wg sync.WaitGroup
-
-	wg.Go(func() {
+	go func() {
+		defer close(outCh)
 		defer close(errCh)
-		page := freshPage()
+
+		page := make([]map[string][]byte, 0, maxPageSize)
+		flush := func() bool {
+			if len(page) == 0 {
+				return true
+			}
+			select {
+			case outCh <- page:
+				page = make([]map[string][]byte, 0, maxPageSize)
+				return true
+			case <-ctx.Done():
+				errCh <- ctx.Err()
+				return false
+			}
+		}
+
 		for key, value := range snapshot {
 			if !strings.HasPrefix(key, prefix) {
 				continue
 			}
-
-			if len(page) >= maxPageSize {
-				select {
-				case outCh <- page:
-					page = freshPage()
-				case <-ctx.Done():
-					errCh <- ctx.Err()
-				}
-			}
-
 			page = append(page, map[string][]byte{key: value})
-
-			if len(page) < maxPageSize {
-				continue
-			}
-
 			if len(page) >= maxPageSize {
-				select {
-				case outCh <- page:
-					page = make([]map[string][]byte, 0)
-				case <-ctx.Done():
-					errCh <- ctx.Err()
+				if !flush() {
+					return
 				}
 			}
-
 		}
-		if len(page) > 0 {
-			select {
-			case outCh <- page:
-			case <-ctx.Done():
-				errCh <- ctx.Err()
-			}
-		}
-	})
-
-	go func() {
-		wg.Wait()
-		close(outCh)
+		flush()
 	}()
 
 	return outCh, errCh
